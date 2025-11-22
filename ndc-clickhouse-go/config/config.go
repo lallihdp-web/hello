@@ -1,0 +1,149 @@
+package config
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+)
+
+// Configuration holds the connector configuration
+type Configuration struct {
+	// Connection settings
+	Connection ConnectionConfig `json:"connection"`
+
+	// Tables configuration (optional overrides)
+	Tables map[string]TableConfig `json:"tables,omitempty"`
+
+	// Native queries (raw SQL as virtual tables)
+	NativeQueries map[string]NativeQuery `json:"native_queries,omitempty"`
+}
+
+// ConnectionConfig holds ClickHouse connection parameters
+type ConnectionConfig struct {
+	// ClickHouse server URL (e.g., "clickhouse://localhost:9000")
+	URL string `json:"url"`
+
+	// Username for authentication
+	Username string `json:"username,omitempty"`
+
+	// Password for authentication
+	Password string `json:"password,omitempty"`
+
+	// Database name
+	Database string `json:"database"`
+
+	// Enable secure connection (TLS)
+	Secure bool `json:"secure,omitempty"`
+
+	// Skip TLS certificate verification
+	InsecureSkipVerify bool `json:"insecure_skip_verify,omitempty"`
+
+	// Connection pool settings
+	MaxOpenConns int `json:"max_open_conns,omitempty"`
+	MaxIdleConns int `json:"max_idle_conns,omitempty"`
+}
+
+// TableConfig holds per-table configuration
+type TableConfig struct {
+	// Alias name to expose in GraphQL (optional)
+	Alias string `json:"alias,omitempty"`
+
+	// Whether to exclude this table from schema
+	Exclude bool `json:"exclude,omitempty"`
+
+	// Column configurations
+	Columns map[string]ColumnConfig `json:"columns,omitempty"`
+
+	// Primary key columns (for mutations)
+	PrimaryKey []string `json:"primary_key,omitempty"`
+}
+
+// ColumnConfig holds per-column configuration
+type ColumnConfig struct {
+	// Alias name to expose in GraphQL
+	Alias string `json:"alias,omitempty"`
+
+	// Whether to exclude this column
+	Exclude bool `json:"exclude,omitempty"`
+}
+
+// NativeQuery defines a raw SQL query exposed as a collection
+type NativeQuery struct {
+	// SQL query with parameter placeholders: {param_name:Type}
+	SQL string `json:"sql"`
+
+	// Return type - either inline columns or reference to a table
+	Columns map[string]string `json:"columns,omitempty"`
+
+	// Reference to an existing table's type
+	ReturnType string `json:"return_type,omitempty"`
+
+	// Arguments for the query
+	Arguments map[string]ArgumentConfig `json:"arguments,omitempty"`
+
+	// Description for GraphQL schema
+	Description string `json:"description,omitempty"`
+}
+
+// ArgumentConfig defines a query argument
+type ArgumentConfig struct {
+	Type        string `json:"type"`
+	Description string `json:"description,omitempty"`
+	Required    bool   `json:"required,omitempty"`
+}
+
+// LoadConfiguration loads configuration from a directory
+func LoadConfiguration(configDir string) (*Configuration, error) {
+	configPath := filepath.Join(configDir, "configuration.json")
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// Return default configuration
+			return &Configuration{
+				Tables:        make(map[string]TableConfig),
+				NativeQueries: make(map[string]NativeQuery),
+			}, nil
+		}
+		return nil, fmt.Errorf("failed to read configuration: %w", err)
+	}
+
+	var config Configuration
+	if err := json.Unmarshal(data, &config); err != nil {
+		return nil, fmt.Errorf("failed to parse configuration: %w", err)
+	}
+
+	// Apply environment variable substitution
+	config.Connection.URL = expandEnv(config.Connection.URL)
+	config.Connection.Username = expandEnv(config.Connection.Username)
+	config.Connection.Password = expandEnv(config.Connection.Password)
+	config.Connection.Database = expandEnv(config.Connection.Database)
+
+	return &config, nil
+}
+
+// expandEnv expands environment variables in the format ${VAR} or $VAR
+func expandEnv(s string) string {
+	return os.ExpandEnv(s)
+}
+
+// SaveConfiguration saves configuration to a directory
+func SaveConfiguration(configDir string, config *Configuration) error {
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+
+	configPath := filepath.Join(configDir, "configuration.json")
+
+	data, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal configuration: %w", err)
+	}
+
+	if err := os.WriteFile(configPath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write configuration: %w", err)
+	}
+
+	return nil
+}

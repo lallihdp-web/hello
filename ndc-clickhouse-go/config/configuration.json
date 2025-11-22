@@ -1,0 +1,35 @@
+{
+  "connection": {
+    "url": "${CLICKHOUSE_URL}",
+    "username": "${CLICKHOUSE_USERNAME}",
+    "password": "${CLICKHOUSE_PASSWORD}",
+    "database": "${CLICKHOUSE_DATABASE}",
+    "secure": false,
+    "max_open_conns": 10,
+    "max_idle_conns": 5
+  },
+  "tables": {},
+  "native_queries": {
+    "get_daily_stats": {
+      "sql": "SELECT toDate(timestamp) as date, count(*) as count, sum(value) as total FROM events WHERE timestamp >= {start_date:Date} AND timestamp <= {end_date:Date} GROUP BY date ORDER BY date",
+      "columns": {
+        "date": "Date",
+        "count": "UInt64",
+        "total": "Float64"
+      },
+      "arguments": {
+        "start_date": {
+          "type": "Date",
+          "description": "Start date for the query",
+          "required": true
+        },
+        "end_date": {
+          "type": "Date",
+          "description": "End date for the query",
+          "required": true
+        }
+      },
+      "description": "Get daily statistics for events within a date range"
+    }
+  }
+}
