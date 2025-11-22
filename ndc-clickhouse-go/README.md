@@ -1,121 +1,86 @@
 # NDC ClickHouse Go Connector
 
-A Native Data Connector for [Hasura DDN](https://hasura.io/ddn) that provides instant GraphQL APIs over ClickHouse databases, built with Go using the [NDC SDK for Go](https://github.com/hasura/ndc-sdk-go).
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![Go Version](https://img.shields.io/badge/go-1.21+-00ADD8.svg)](https://golang.org/)
 
-## Features
+A Native Data Connector for [Hasura DDN](https://hasura.io/ddn) that provides **instant GraphQL APIs** over ClickHouse databases. Built with Go using the [NDC SDK for Go](https://github.com/hasura/ndc-sdk-go).
 
-- **Auto Schema Introspection**: Automatically discovers tables and columns from ClickHouse
-- **Type Mapping**: Maps ClickHouse types to GraphQL types
-- **Query Support**: Full query capabilities with filtering, sorting, pagination
-- **Aggregations**: Support for COUNT, SUM, AVG, MIN, MAX and custom aggregates
-- **Native Queries**: Define raw SQL queries as virtual GraphQL collections
-- **Mutations**: INSERT support via batch operations
-- **Environment Variables**: Configuration supports env var substitution
+**Just like Hasura** - auto-generate GraphQL from your database with zero code. Point it at your ClickHouse instance and get a full GraphQL API instantly.
 
-## Quick Start
+## Key Features
 
-### Using Docker Compose
+| Feature | Description |
+|---------|-------------|
+| **Auto Schema Discovery** | Automatically introspects tables and columns |
+| **Zero Code GraphQL** | Instant GraphQL API without writing resolvers |
+| **Full Query Support** | Filtering, sorting, pagination out of the box |
+| **Aggregations** | COUNT, SUM, AVG, MIN, MAX and custom aggregates |
+| **Relationships** | Auto-detected JOINs between tables |
+| **Row-Level Security** | Fine-grained permissions per role |
+| **Native Queries** | Custom SQL as GraphQL collections |
+| **Mutations** | INSERT support via batch operations |
+| **CLI Tools** | Introspect, validate, and manage configuration |
+
+## Quick Start (2 minutes)
+
+### Option 1: Docker (Recommended)
 
 ```bash
-# Start ClickHouse and the connector
+git clone https://github.com/your-org/ndc-clickhouse-go.git
+cd ndc-clickhouse-go
+
+# Start ClickHouse and connector
 docker-compose up -d
 
-# The connector will be available at http://localhost:8080
+# GraphQL API available at http://localhost:8080
 ```
 
-### Building from Source
+### Option 2: From Source
 
 ```bash
-# Install dependencies
-make deps
+# Build
+make deps && make build
 
-# Build the binary
-make build
+# Introspect your database
+./bin/ndc-clickhouse introspect \
+  --url "clickhouse://localhost:9000" \
+  --database "your_db" \
+  --output ./config
 
-# Run the connector
-make run
+# Start the connector
+./bin/ndc-clickhouse serve --configuration ./config
 ```
 
-## Configuration
+## How It Works
 
-Create a `configuration.json` in your config directory:
-
-```json
-{
-  "connection": {
-    "url": "${CLICKHOUSE_URL}",
-    "username": "${CLICKHOUSE_USERNAME}",
-    "password": "${CLICKHOUSE_PASSWORD}",
-    "database": "default",
-    "secure": false
-  },
-  "tables": {
-    "users": {
-      "alias": "Users"
-    }
-  },
-  "native_queries": {
-    "get_stats": {
-      "sql": "SELECT count(*) as total FROM events WHERE date >= {start:Date}",
-      "columns": {
-        "total": "UInt64"
-      },
-      "arguments": {
-        "start": {
-          "type": "Date",
-          "required": true
-        }
-      }
-    }
-  }
-}
+```
+┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
+│  GraphQL Query  │ ──▶ │  NDC Connector   │ ──▶ │   ClickHouse    │
+│                 │     │  (This project)  │     │    Database     │
+│  users {        │     │                  │     │                 │
+│    id           │     │  - Schema Gen    │     │  SELECT id,     │
+│    name         │     │  - Query Build   │     │  name FROM      │
+│    orders {     │     │  - Permissions   │     │  users ...      │
+│      total      │     │  - Results Map   │     │                 │
+│    }            │     │                  │     │                 │
+│  }              │     │                  │     │                 │
+└─────────────────┘     └──────────────────┘     └─────────────────┘
 ```
 
-## Environment Variables
+## GraphQL Examples
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `CLICKHOUSE_URL` | ClickHouse connection URL | `clickhouse://localhost:9000` |
-| `CLICKHOUSE_DATABASE` | Database name | `default` |
-| `CLICKHOUSE_USERNAME` | Username | `default` |
-| `CLICKHOUSE_PASSWORD` | Password | - |
-| `HASURA_CONNECTOR_PORT` | Connector HTTP port | `8080` |
-| `HASURA_LOG_LEVEL` | Log level (debug, info, warn, error) | `info` |
-
-## GraphQL Query Examples
-
-### Basic Query
-```graphql
-query {
-  users(limit: 10) {
-    id
-    name
-    email
-    created_at
-  }
-}
-```
-
-### Filtering
+### Query with Filtering
 ```graphql
 query {
   users(where: { is_active: { _eq: true }, age: { _gte: 18 } }) {
     id
     name
-  }
-}
-```
-
-### Sorting and Pagination
-```graphql
-query {
-  products(
-    order_by: { price: desc }
-    limit: 10
-    offset: 20
-  ) {
-    name
-    price
+    email
+    orders(limit: 5, order_by: { created_at: desc }) {
+      id
+      total
+      status
+    }
   }
 }
 ```
@@ -123,52 +88,115 @@ query {
 ### Aggregations
 ```graphql
 query {
-  orders_aggregate {
+  orders_aggregate(where: { status: { _eq: "completed" } }) {
     aggregate {
       count
-      sum {
-        total_price
-      }
-      avg {
-        quantity
+      sum { total }
+      avg { total }
+    }
+  }
+}
+```
+
+### Insert Mutation
+```graphql
+mutation {
+  insert_users(objects: [
+    { name: "Alice", email: "alice@example.com" }
+  ]) {
+    affected_rows
+  }
+}
+```
+
+## Configuration
+
+```json
+{
+  "connection": {
+    "url": "${CLICKHOUSE_URL}",
+    "database": "${CLICKHOUSE_DATABASE}"
+  },
+  "tables": {
+    "users": { "alias": "Users" }
+  },
+  "relationships": {
+    "auto_detect": true
+  },
+  "permissions": {
+    "admin_role": "admin",
+    "roles": {
+      "user": {
+        "tables": {
+          "orders": {
+            "select": {
+              "filter": { "user_id": { "_eq": "X-Hasura-User-Id" } }
+            }
+          }
+        }
       }
     }
   }
 }
 ```
 
+## CLI Commands
+
+```bash
+# Introspect database and generate config
+ndc-clickhouse introspect --url clickhouse://localhost:9000 --database mydb
+
+# Validate configuration
+ndc-clickhouse validate --config ./config
+
+# Print GraphQL schema
+ndc-clickhouse print-schema --config ./config
+
+# Start server
+ndc-clickhouse serve --configuration ./config
+```
+
 ## Supported ClickHouse Types
 
-| ClickHouse Type | GraphQL Type |
-|-----------------|--------------|
-| Int8, Int16, Int32, UInt8, UInt16, UInt32 | Int |
-| Int64, UInt64, Int128, Int256 | BigInt |
-| Float32, Float64, Decimal | Float |
-| String, FixedString | String |
-| Bool | Boolean |
-| UUID | UUID |
-| Date, Date32 | Date |
-| DateTime, DateTime64 | DateTime |
-| Array(T) | [T] |
-| Nullable(T) | T (nullable) |
-| Enum | String |
-| Map, Tuple, Nested, JSON | JSON |
+| ClickHouse | GraphQL | Operators |
+|------------|---------|-----------|
+| Int8-Int256, UInt8-UInt256 | Int/BigInt | `_eq`, `_neq`, `_gt`, `_gte`, `_lt`, `_lte`, `_in` |
+| Float32, Float64, Decimal | Float | Same as Int |
+| String, FixedString | String | Same + `_like`, `_ilike`, `_regex` |
+| Bool | Boolean | `_eq`, `_neq` |
+| UUID | UUID | `_eq`, `_neq`, `_in` |
+| Date, DateTime | Date/DateTime | All comparison operators |
+| Array(T) | [T] | Contains operators |
+| Nullable(T) | T (nullable) | `_is_null` |
+| Enum, Map, Tuple | String/JSON | Varies |
 
-## Comparison Operators
+## Documentation
 
-| Operator | Description |
+| Document | Description |
 |----------|-------------|
-| `_eq` | Equal |
-| `_neq` | Not equal |
-| `_gt` | Greater than |
-| `_gte` | Greater than or equal |
-| `_lt` | Less than |
-| `_lte` | Less than or equal |
-| `_in` | In array |
-| `_like` | SQL LIKE pattern |
-| `_ilike` | Case-insensitive LIKE |
-| `_regex` | Regular expression match |
-| `_is_null` | Is null check |
+| [Getting Started](docs/GETTING_STARTED.md) | Quick start guide |
+| [Configuration](docs/CONFIGURATION.md) | Full configuration reference |
+| [Relationships](docs/RELATIONSHIPS.md) | Setting up table relationships |
+| [Permissions](docs/PERMISSIONS.md) | Row-level security setup |
+| [Development](docs/DEVELOPMENT.md) | Developer guide |
+| [Contributing](CONTRIBUTING.md) | How to contribute |
+
+## Project Structure
+
+```
+ndc-clickhouse-go/
+├── cmd/ndc-clickhouse/     # CLI entrypoint & commands
+├── connector/              # NDC interface implementation
+├── clickhouse/             # ClickHouse client & introspection
+├── schema/                 # Type mapping (ClickHouse → GraphQL)
+├── config/                 # Configuration & permissions
+├── internal/query/         # SQL query builder
+├── tests/                  # Integration tests
+├── docs/                   # Documentation
+├── Dockerfile
+├── docker-compose.yaml
+└── Makefile
+```
 
 ## Development
 
@@ -179,25 +207,30 @@ make test
 # Run with hot reload
 make dev
 
-# Format code
-make fmt
-
 # Run linter
 make lint
+
+# Build Docker image
+make docker-build
 ```
 
-## Architecture
+## Comparison with Hasura's Rust Connector
 
-```
-ndc-clickhouse-go/
-├── cmd/ndc-clickhouse/     # CLI entrypoint
-├── connector/              # NDC connector implementation
-├── clickhouse/             # ClickHouse client and introspection
-├── schema/                 # Type mapping and NDC schema
-├── internal/query/         # SQL query builder
-└── config/                 # Configuration handling
-```
+This Go implementation is inspired by [hasura/ndc-clickhouse](https://github.com/hasura/ndc-clickhouse) (Rust) but offers:
+
+- **Go ecosystem**: Easier to extend for Go teams
+- **Single binary**: No Rust toolchain needed
+- **Same features**: Full NDC spec compliance
+- **Added**: CLI introspection tools, enhanced permissions
 
 ## License
 
-Apache License 2.0
+Apache License 2.0 - see [LICENSE](LICENSE) for details.
+
+## Contributing
+
+We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+---
+
+Built with ❤️ using [Hasura NDC SDK for Go](https://github.com/hasura/ndc-sdk-go)

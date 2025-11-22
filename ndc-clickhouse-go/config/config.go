@@ -17,6 +17,27 @@ type Configuration struct {
 
 	// Native queries (raw SQL as virtual tables)
 	NativeQueries map[string]NativeQuery `json:"native_queries,omitempty"`
+
+	// Relationships between tables
+	Relationships RelationshipsConfig `json:"relationships,omitempty"`
+
+	// Permissions for row-level security
+	Permissions PermissionsConfig `json:"permissions,omitempty"`
+
+	// Metadata settings
+	Metadata MetadataConfig `json:"metadata,omitempty"`
+}
+
+// MetadataConfig holds metadata settings
+type MetadataConfig struct {
+	// Version of the configuration schema
+	Version string `json:"version,omitempty"`
+
+	// Description of this connector instance
+	Description string `json:"description,omitempty"`
+
+	// Tags for categorization
+	Tags []string `json:"tags,omitempty"`
 }
 
 // ConnectionConfig holds ClickHouse connection parameters
