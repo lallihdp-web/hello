@@ -21,7 +21,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # NDC ClickHouse Connector
+  # NDC ClickHouse Connector (NDC API)
   ndc-clickhouse:
     build:
       context: .
@@ -49,31 +49,32 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    # Enable graceful shutdown
     stop_grace_period: 30s
 
-  # Hasura DDN v3 Engine
-  hasura-engine:
-    image: hasura/v3-engine:latest
-    container_name: hasura-engine
+  # Standalone GraphQL Server (NO HASURA REQUIRED)
+  graphql:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: clickhouse-graphql
     ports:
-      - "3000:3000"
+      - "4000:4000"
     environment:
-      - HASURA_GRAPHQL_CORS_DOMAIN=*
-      - HASURA_GRAPHQL_ADMIN_SECRET=admin-secret
-      - OTLP_ENDPOINT=http://otel-collector:4317
-    volumes:
-      - ./engine-metadata:/metadata
+      - CLICKHOUSE_URL=clickhouse://clickhouse:9000
+      - CLICKHOUSE_DATABASE=default
+      - CLICKHOUSE_USERNAME=default
+      - CLICKHOUSE_PASSWORD=clickhouse
+      - GRAPHQL_PORT=4000
+    command: ["graphql", "--port", "4000"]
     depends_on:
-      ndc-clickhouse:
+      clickhouse:
         condition: service_healthy
-    command:
-      - "--metadata-path"
-      - "/metadata/metadata.json"
-      - "--authn-config-path"
-      - "/metadata/auth_config.json"
-    profiles:
-      - engine
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:4000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    stop_grace_period: 30s
 
   # Web Console for ClickHouse Connector
   console:
@@ -153,13 +154,18 @@ volumes:
   prometheus-data:
   grafana-data:
 
-# Usage:
+# =============================================================================
+# USAGE (No Hasura Required!)
+# =============================================================================
 #
-# Basic setup (ClickHouse + Connector only):
+# Basic setup (ClickHouse + NDC Connector + GraphQL Server):
 #   docker compose up -d
 #
-# With Hasura DDN Engine:
-#   docker compose --profile engine up -d
+# Access GraphQL Playground:
+#   http://localhost:4000
+#
+# Access NDC API:
+#   http://localhost:8080
 #
 # With Web Console:
 #   docker compose --profile console up -d
@@ -167,8 +173,17 @@ volumes:
 # With Observability Stack:
 #   docker compose --profile observability up -d
 #
-# Full stack:
-#   docker compose --profile engine --profile console --profile observability up -d
+# Full stack (all services):
+#   docker compose --profile console --profile observability up -d
+#
+# Example GraphQL Query:
+#   query {
+#     your_table(limit: 10, where: {column: {_eq: "value"}}) {
+#       id
+#       name
+#       created_at
+#     }
+#   }
 #
 # Graceful shutdown:
-#   docker compose down (waits for graceful shutdown)
+#   docker compose down (waits for in-flight requests to complete)

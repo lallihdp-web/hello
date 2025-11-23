@@ -7,15 +7,18 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
 	"github.com/hasura/ndc-sdk-go/connector"
 	"github.com/your-org/ndc-clickhouse-go/analytics"
 	"github.com/your-org/ndc-clickhouse-go/cache"
+	"github.com/your-org/ndc-clickhouse-go/clickhouse"
 	chconnector "github.com/your-org/ndc-clickhouse-go/connector"
 	"github.com/your-org/ndc-clickhouse-go/config"
 	"github.com/your-org/ndc-clickhouse-go/console"
+	"github.com/your-org/ndc-clickhouse-go/graphql"
 	"github.com/your-org/ndc-clickhouse-go/middleware"
 	"github.com/your-org/ndc-clickhouse-go/subscription"
 )
@@ -41,6 +44,9 @@ func main() {
 			return
 		case "console":
 			runConsole()
+			return
+		case "graphql":
+			runGraphQL()
 			return
 		case "version":
 			fmt.Printf("ndc-clickhouse %s (built: %s)\n", Version, BuildTime)
@@ -264,21 +270,115 @@ func runPrintSchema() {
 	}
 }
 
+func runGraphQL() {
+	// Parse flags
+	port := 4000
+	enablePlayground := true
+
+	for i := 2; i < len(os.Args); i++ {
+		arg := os.Args[i]
+		switch {
+		case arg == "--port" && i+1 < len(os.Args):
+			i++
+			if p, err := strconv.Atoi(os.Args[i]); err == nil {
+				port = p
+			}
+		case arg == "--no-playground":
+			enablePlayground = false
+		}
+	}
+
+	// Use environment variables if not set
+	if envPort := os.Getenv("GRAPHQL_PORT"); envPort != "" && port == 4000 {
+		if p, err := strconv.Atoi(envPort); err == nil {
+			port = p
+		}
+	}
+
+	// Get ClickHouse connection from environment
+	connConfig := &config.ConnectionConfig{
+		URL:      os.Getenv("CLICKHOUSE_URL"),
+		Database: os.Getenv("CLICKHOUSE_DATABASE"),
+		Username: os.Getenv("CLICKHOUSE_USERNAME"),
+		Password: os.Getenv("CLICKHOUSE_PASSWORD"),
+	}
+
+	if connConfig.URL == "" {
+		connConfig.URL = "clickhouse://localhost:9000"
+	}
+	if connConfig.Database == "" {
+		connConfig.Database = "default"
+	}
+	if connConfig.Username == "" {
+		connConfig.Username = "default"
+	}
+
+	// Create ClickHouse client
+	client, err := clickhouse.NewClient(connConfig)
+	if err != nil {
+		log.Fatalf("Failed to connect to ClickHouse: %v", err)
+	}
+	defer client.Close()
+
+	// Create GraphQL server
+	serverConfig := graphql.DefaultServerConfig()
+	serverConfig.Port = port
+	serverConfig.EnablePlayground = enablePlayground
+
+	server, err := graphql.NewServer(client, serverConfig)
+	if err != nil {
+		log.Fatalf("Failed to create GraphQL server: %v", err)
+	}
+
+	// Start server in goroutine
+	go func() {
+		if err := server.Start(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("GraphQL server error: %v", err)
+		}
+	}()
+
+	// Wait for interrupt signal
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	log.Println("Shutting down GraphQL server...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(ctx); err != nil {
+		log.Printf("Server forced to shutdown: %v", err)
+	}
+
+	// Graceful shutdown of ClickHouse client
+	if err := client.Shutdown(15 * time.Second); err != nil {
+		log.Printf("ClickHouse client shutdown error: %v", err)
+	}
+
+	log.Println("GraphQL server stopped")
+}
+
 func printHelp() {
 	help := `
-ndc-clickhouse - ClickHouse Native Data Connector for Hasura
+ndc-clickhouse - ClickHouse Native Data Connector
 
 USAGE:
     ndc-clickhouse <command> [options]
 
 COMMANDS:
     serve           Start the NDC connector server (default)
+    graphql         Start standalone GraphQL server (no Hasura required)
     console         Start the web-based admin console
     introspect      Introspect ClickHouse database and generate configuration
     validate        Validate the connector configuration
     print-schema    Print the GraphQL schema
     version         Print version information
     help            Show this help message
+
+GRAPHQL OPTIONS:
+    --port          GraphQL server port (env: GRAPHQL_PORT, default: 4000)
+    --no-playground Disable GraphQL Playground
 
 CONSOLE OPTIONS:
     --port          Console server port (env: CONSOLE_PORT, default: 3000)
