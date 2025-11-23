@@ -29,6 +29,108 @@ type Configuration struct {
 
 	// Telemetry settings (OpenTelemetry)
 	Telemetry TelemetryConfig `json:"telemetry,omitempty"`
+
+	// Cache settings
+	Cache CacheConfig `json:"cache,omitempty"`
+
+	// Rate limiting settings
+	RateLimiting RateLimitingConfig `json:"rate_limiting,omitempty"`
+}
+
+// CacheConfig holds query cache configuration
+type CacheConfig struct {
+	// Enable caching
+	Enabled bool `json:"enabled"`
+
+	// Maximum number of cached entries
+	MaxSize int `json:"max_size,omitempty"`
+
+	// Default TTL for cached entries (e.g., "5m", "1h")
+	DefaultTTL string `json:"default_ttl,omitempty"`
+
+	// Enable cache warming on startup
+	WarmOnStartup bool `json:"warm_on_startup,omitempty"`
+
+	// Cleanup interval for expired entries (e.g., "1m", "5m")
+	CleanupInterval string `json:"cleanup_interval,omitempty"`
+
+	// Per-collection cache settings
+	Collections map[string]CollectionCacheConfig `json:"collections,omitempty"`
+
+	// Cache statistics endpoint
+	StatsEnabled bool `json:"stats_enabled,omitempty"`
+
+	// Invalidation settings
+	Invalidation CacheInvalidationConfig `json:"invalidation,omitempty"`
+}
+
+// CollectionCacheConfig holds per-collection cache settings
+type CollectionCacheConfig struct {
+	// Enable caching for this collection
+	Enabled bool `json:"enabled"`
+
+	// Custom TTL for this collection (overrides default)
+	TTL string `json:"ttl,omitempty"`
+
+	// Maximum entries for this collection
+	MaxSize int `json:"max_size,omitempty"`
+
+	// Cache key prefix
+	KeyPrefix string `json:"key_prefix,omitempty"`
+}
+
+// CacheInvalidationConfig holds cache invalidation settings
+type CacheInvalidationConfig struct {
+	// Invalidate on mutation
+	OnMutation bool `json:"on_mutation,omitempty"`
+
+	// Invalidation patterns (collection patterns to invalidate)
+	Patterns []string `json:"patterns,omitempty"`
+
+	// Webhook URL for external invalidation
+	WebhookURL string `json:"webhook_url,omitempty"`
+}
+
+// RateLimitingConfig holds rate limiting configuration
+type RateLimitingConfig struct {
+	// Enable rate limiting
+	Enabled bool `json:"enabled"`
+
+	// Rate limiter type: "token_bucket" or "leaky_bucket"
+	Type string `json:"type,omitempty"`
+
+	// Default rate limit (requests per second)
+	DefaultRate float64 `json:"default_rate,omitempty"`
+
+	// Default burst size (for token bucket)
+	DefaultBurst int `json:"default_burst,omitempty"`
+
+	// Queue size (for leaky bucket)
+	QueueSize int `json:"queue_size,omitempty"`
+
+	// Per-role rate limits
+	Roles map[string]RoleLimitConfig `json:"roles,omitempty"`
+
+	// Per-endpoint rate limits
+	Endpoints map[string]EndpointLimitConfig `json:"endpoints,omitempty"`
+}
+
+// RoleLimitConfig holds per-role rate limit settings
+type RoleLimitConfig struct {
+	// Rate limit (requests per second)
+	Rate float64 `json:"rate"`
+
+	// Burst size (for token bucket)
+	Burst int `json:"burst,omitempty"`
+}
+
+// EndpointLimitConfig holds per-endpoint rate limit settings
+type EndpointLimitConfig struct {
+	// Rate limit (requests per second)
+	Rate float64 `json:"rate"`
+
+	// Burst size (for token bucket)
+	Burst int `json:"burst,omitempty"`
 }
 
 // TelemetryConfig holds OpenTelemetry configuration

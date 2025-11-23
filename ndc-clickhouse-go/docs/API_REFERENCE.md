@@ -324,20 +324,20 @@ Updates configuration (requires restart).
 ```go
 import "github.com/your-org/ndc-clickhouse-go/cache"
 
-// Create cache
-cache := cache.NewInMemoryCache(1000)
+// Create basic LRU cache
+c := cache.NewInMemoryCache(1000)
 
 // Basic operations
-cache.Set("key", value, 5*time.Minute)
-value, found := cache.Get("key")
-cache.Delete("key")
-cache.Clear()
+c.Set("key", value, 5*time.Minute)
+value, found := c.Get("key")
+c.Delete("key")
+c.Clear()
 
 // Statistics
-stats := cache.Stats()
+stats := c.Stats()
 // stats.Hits, stats.Misses, stats.Size, stats.HitRate
 
-// Query-specific cache
+// Query-specific cache (simple)
 qc := cache.NewQueryCache(&cache.QueryCacheConfig{
     Enabled:    true,
     MaxSize:    1000,
@@ -352,6 +352,103 @@ results, found := qc.Get("users", queryParams)
 result, err := qc.WithCache("users", queryParams, func() (interface{}, error) {
     return db.Query(sql)
 })
+```
+
+#### Advanced Cache (Configurable)
+
+```go
+import "github.com/your-org/ndc-clickhouse-go/cache"
+
+// Create advanced cache with per-collection settings
+cfg := &cache.AdvancedCacheConfig{
+    Enabled:              true,
+    MaxSize:              10000,
+    DefaultTTL:           5 * time.Minute,
+    CleanupInterval:      time.Minute,
+    StatsEnabled:         true,
+    InvalidateOnMutation: true,
+    Collections: map[string]cache.CollectionCacheSettings{
+        "users": {
+            Enabled: true,
+            TTL:     10 * time.Minute,
+            MaxSize: 1000,
+        },
+        "events": {
+            Enabled: true,
+            TTL:     time.Minute,
+        },
+    },
+}
+
+ac := cache.NewAdvancedCache(cfg)
+defer ac.Close() // Stops cleanup goroutine
+
+// Per-collection caching
+ac.Set("users", "key1", value)
+value, found := ac.Get("users", "key1")
+ac.Delete("users", "key1")
+
+// Query caching with automatic key generation
+ac.SetQuery("users", queryParams, results)
+results, found := ac.GetQuery("users", queryParams)
+
+// Cache wrapper for queries
+result, err := ac.WithQuery("users", queryParams, func() (interface{}, error) {
+    return db.Query(sql)
+})
+
+// Collection invalidation
+ac.InvalidateCollection("users")
+ac.Clear() // Clear all caches
+
+// Advanced statistics
+stats := ac.Stats()
+// stats.TotalHits, stats.TotalMisses, stats.HitRate
+// stats.MainCache - main cache stats
+// stats.Collections - per-collection stats
+
+// Check if cache should invalidate on mutations
+if ac.ShouldInvalidateOnMutation() {
+    ac.InvalidateCollection("users")
+}
+```
+
+#### Cache Statistics Structure
+
+```go
+type AdvancedCacheStats struct {
+    Enabled         bool                  `json:"enabled"`
+    TotalHits       int64                 `json:"total_hits"`
+    TotalMisses     int64                 `json:"total_misses"`
+    TotalEvictions  int64                 `json:"total_evictions"`
+    TotalSize       int                   `json:"total_size"`
+    HitRate         float64               `json:"hit_rate"`
+    MainCache       CacheStats            `json:"main_cache"`
+    Collections     map[string]CacheStats `json:"collections"`
+    CollectionCount int                   `json:"collection_count"`
+}
+```
+
+#### Creating Config from JSON
+
+```go
+// Parse cache config from configuration map
+m := map[string]interface{}{
+    "enabled":          true,
+    "max_size":         float64(10000),
+    "default_ttl":      "5m",
+    "cleanup_interval": "1m",
+    "collections": map[string]interface{}{
+        "users": map[string]interface{}{
+            "enabled":  true,
+            "ttl":      "10m",
+            "max_size": float64(1000),
+        },
+    },
+}
+
+cfg, err := cache.ConfigFromMap(m)
+ac := cache.NewAdvancedCache(cfg)
 ```
 
 ### Analytics Package

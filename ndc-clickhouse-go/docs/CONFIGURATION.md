@@ -379,6 +379,174 @@ Enable distributed tracing and metrics collection using OpenTelemetry:
 | `ndc_clickhouse_runtime_goroutines` | Gauge | Number of goroutines |
 | `ndc_clickhouse_runtime_heap_alloc_bytes` | Gauge | Heap allocation |
 
+## Cache Configuration
+
+Enable query result caching to improve performance for repeated queries:
+
+```json
+{
+  "cache": {
+    "enabled": true,
+    "max_size": 10000,
+    "default_ttl": "5m",
+    "cleanup_interval": "1m",
+    "stats_enabled": true,
+    "collections": {
+      "users": {
+        "enabled": true,
+        "ttl": "10m",
+        "max_size": 1000
+      },
+      "events": {
+        "enabled": true,
+        "ttl": "1m"
+      },
+      "sensitive_data": {
+        "enabled": false
+      }
+    },
+    "invalidation": {
+      "on_mutation": true,
+      "patterns": ["users", "orders"]
+    }
+  }
+}
+```
+
+### Cache Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `enabled` | boolean | `false` | Enable query result caching |
+| `max_size` | integer | `10000` | Maximum number of cached entries |
+| `default_ttl` | string | `"5m"` | Default TTL for cached entries (e.g., "5m", "1h") |
+| `cleanup_interval` | string | `"1m"` | Interval for cleaning up expired entries |
+| `stats_enabled` | boolean | `true` | Enable cache statistics endpoint |
+| `warm_on_startup` | boolean | `false` | Warm cache on startup |
+
+### Per-Collection Cache Settings
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `enabled` | boolean | Enable/disable caching for this collection |
+| `ttl` | string | Custom TTL for this collection |
+| `max_size` | integer | Maximum entries for this collection |
+| `key_prefix` | string | Cache key prefix for this collection |
+
+### Cache Invalidation Settings
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `on_mutation` | boolean | Automatically invalidate cache on mutations |
+| `patterns` | array | Collection patterns to invalidate on mutation |
+| `webhook_url` | string | Webhook URL for external cache invalidation |
+
+### Cache Statistics
+
+When `stats_enabled` is true, cache statistics are available:
+
+```json
+{
+  "enabled": true,
+  "total_hits": 15420,
+  "total_misses": 3210,
+  "total_evictions": 520,
+  "total_size": 8432,
+  "hit_rate": 0.828,
+  "main_cache": {
+    "hits": 12000,
+    "misses": 2800,
+    "size": 7000,
+    "max_size": 10000,
+    "evictions": 400
+  },
+  "collections": {
+    "users": {
+      "hits": 3420,
+      "misses": 410,
+      "size": 1432,
+      "max_size": 1000,
+      "evictions": 120
+    }
+  }
+}
+```
+
+## Rate Limiting Configuration
+
+Configure rate limiting to protect your connector from excessive requests:
+
+```json
+{
+  "rate_limiting": {
+    "enabled": true,
+    "type": "token_bucket",
+    "default_rate": 100,
+    "default_burst": 20,
+    "roles": {
+      "admin": {
+        "rate": 1000,
+        "burst": 100
+      },
+      "user": {
+        "rate": 100,
+        "burst": 20
+      },
+      "anonymous": {
+        "rate": 10,
+        "burst": 5
+      }
+    },
+    "endpoints": {
+      "/query": {
+        "rate": 50,
+        "burst": 10
+      },
+      "/mutation": {
+        "rate": 20,
+        "burst": 5
+      }
+    }
+  }
+}
+```
+
+### Rate Limiting Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `enabled` | boolean | `false` | Enable rate limiting |
+| `type` | string | `"token_bucket"` | Rate limiter type: `token_bucket` or `leaky_bucket` |
+| `default_rate` | float | `100` | Default rate limit (requests per second) |
+| `default_burst` | integer | `20` | Default burst size (for token bucket) |
+| `queue_size` | integer | `100` | Queue size (for leaky bucket) |
+
+### Rate Limiter Types
+
+**Token Bucket**
+- Allows burst traffic up to the burst size
+- Tokens replenish at the specified rate
+- Best for: APIs with occasional bursts
+
+**Leaky Bucket**
+- Smooths out request flow
+- Queues requests when rate is exceeded
+- Best for: Consistent rate enforcement
+
+### Per-Role Rate Limits
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `rate` | float | Requests per second for this role |
+| `burst` | integer | Maximum burst size for this role |
+
+### Per-Endpoint Rate Limits
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `rate` | float | Requests per second for this endpoint |
+| `burst` | integer | Maximum burst size for this endpoint |
+
 ## Complete Example
 
 ```json
@@ -463,6 +631,33 @@ Enable distributed tracing and metrics collection using OpenTelemetry:
   "metadata": {
     "version": "1.0.0",
     "description": "E-commerce analytics connector"
+  },
+  "cache": {
+    "enabled": true,
+    "max_size": 10000,
+    "default_ttl": "5m",
+    "cleanup_interval": "1m",
+    "stats_enabled": true,
+    "collections": {
+      "users": {
+        "enabled": true,
+        "ttl": "10m",
+        "max_size": 1000
+      }
+    },
+    "invalidation": {
+      "on_mutation": true
+    }
+  },
+  "rate_limiting": {
+    "enabled": true,
+    "type": "token_bucket",
+    "default_rate": 100,
+    "default_burst": 20,
+    "roles": {
+      "admin": { "rate": 1000, "burst": 100 },
+      "user": { "rate": 100, "burst": 20 }
+    }
   }
 }
 ```
