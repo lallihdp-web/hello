@@ -134,7 +134,7 @@ mutation {
         "tables": {
           "orders": {
             "select": {
-              "filter": { "user_id": { "_eq": "X-Hasura-User-Id" } }
+              "filter": { "user_id": { "_eq": "X-User-Id" } }
             }
           }
         }

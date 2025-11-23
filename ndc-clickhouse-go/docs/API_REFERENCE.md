@@ -637,8 +637,8 @@ handler := telemetry.HTTPMiddleware(nil)(yourHandler)
 middlewareCfg := &telemetry.HTTPMiddlewareConfig{
     ServiceName:  "my-service",
     SkipPaths:    []string{"/health", "/metrics"},
-    UserIDHeader: "X-Hasura-User-Id",
-    RoleHeader:   "X-Hasura-Role",
+    UserIDHeader: "X-User-Id",
+    RoleHeader:   "X-Role",
 }
 handler := telemetry.HTTPMiddleware(middlewareCfg)(yourHandler)
 
@@ -785,10 +785,10 @@ stats := lb.GetStats("user-key")
 |--------|-------------|
 | `Authorization` | Bearer token or API key |
 | `X-API-Key` | API key authentication |
-| `X-Hasura-Role` | User role for permissions |
-| `X-Hasura-User-Id` | User ID for row-level security |
-| `X-Hasura-Org-Id` | Organization ID |
-| `X-Hasura-Tenant-Id` | Tenant ID for multi-tenancy |
+| `X-Role` | User role for permissions |
+| `X-User-Id` | User ID for row-level security |
+| `X-Org-Id` | Organization ID |
+| `X-Tenant-Id` | Tenant ID for multi-tenancy |
 
 ### Response Headers
 

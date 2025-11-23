@@ -611,7 +611,7 @@ Configure rate limiting to protect your connector from excessive requests:
           "orders": {
             "select": {
               "filter": {
-                "user_id": { "_eq": "X-Hasura-User-Id" }
+                "user_id": { "_eq": "X-User-Id" }
               }
             }
           }

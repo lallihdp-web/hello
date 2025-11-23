@@ -99,7 +99,7 @@ type PermissionFilter struct {
 	Not *PermissionFilter `json:"_not,omitempty"`
 
 	// Column conditions (column_name -> operator -> value)
-	// Example: {"user_id": {"_eq": "X-Hasura-User-Id"}}
+	// Example: {"user_id": {"_eq": "X-User-Id"}}
 	Columns map[string]map[string]interface{} `json:"-"`
 }
 
@@ -166,7 +166,7 @@ type SessionVariables map[string]interface{}
 
 // Get retrieves a session variable by name
 func (sv SessionVariables) Get(name string) (interface{}, bool) {
-	// Handle X-Hasura-* style variable names
+	// Handle X-* style variable names
 	val, ok := sv[name]
 	if ok {
 		return val, true
@@ -391,7 +391,7 @@ func (pc *PermissionChecker) resolveValue(value interface{}) interface{} {
 	// Check if value is a session variable reference
 	if strVal, ok := value.(string); ok {
 		if len(strVal) > 2 && strVal[0] == 'X' && strVal[1] == '-' {
-			// This looks like a session variable (X-Hasura-*)
+			// This looks like a session variable (X-*)
 			if resolved, ok := pc.session.Get(strVal); ok {
 				return resolved
 			}

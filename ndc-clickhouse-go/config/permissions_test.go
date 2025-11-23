@@ -153,7 +153,7 @@ func TestPermissionChecker_InheritedPermissions(t *testing.T) {
 func TestPermissionChecker_BuildFilterSQL(t *testing.T) {
 	cfg := &PermissionsConfig{}
 	session := SessionVariables{
-		"X-Hasura-User-Id": "123",
+		"X-User-Id": "123",
 	}
 
 	pc := NewPermissionChecker(cfg, "user", session)
@@ -194,8 +194,8 @@ func TestPermissionChecker_BuildFilterSQL(t *testing.T) {
 
 func TestSessionVariables_Get(t *testing.T) {
 	sv := SessionVariables{
-		"X-Hasura-User-Id": "123",
-		"X-Hasura-Role":    "user",
+		"X-User-Id": "123",
+		"X-Role":    "user",
 	}
 
 	tests := []struct {
@@ -203,9 +203,9 @@ func TestSessionVariables_Get(t *testing.T) {
 		expected interface{}
 		found    bool
 	}{
-		{"X-Hasura-User-Id", "123", true},
-		{"X-Hasura-Role", "user", true},
-		{"X-Hasura-Unknown", nil, false},
+		{"X-User-Id", "123", true},
+		{"X-Role", "user", true},
+		{"X-Unknown", nil, false},
 	}
 
 	for _, tt := range tests {
@@ -253,7 +253,7 @@ func TestInsertPermission(t *testing.T) {
 	perm := InsertPermission{
 		Columns: []string{"name", "email"},
 		Set: map[string]interface{}{
-			"created_by": "X-Hasura-User-Id",
+			"created_by": "X-User-Id",
 		},
 	}
 
@@ -261,8 +261,8 @@ func TestInsertPermission(t *testing.T) {
 		t.Errorf("Columns count = %d, want 2", len(perm.Columns))
 	}
 
-	if perm.Set["created_by"] != "X-Hasura-User-Id" {
-		t.Errorf("Set[created_by] = %v, want X-Hasura-User-Id", perm.Set["created_by"])
+	if perm.Set["created_by"] != "X-User-Id" {
+		t.Errorf("Set[created_by] = %v, want X-User-Id", perm.Set["created_by"])
 	}
 }
 

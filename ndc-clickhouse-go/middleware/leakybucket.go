@@ -394,12 +394,12 @@ func (lb *LeakyBucket) Middleware(next http.Handler) http.Handler {
 
 		// Get identifier
 		identifier := r.RemoteAddr
-		if userID := r.Header.Get("X-Hasura-User-Id"); userID != "" {
+		if userID := r.Header.Get("X-User-Id"); userID != "" {
 			identifier = userID
 		}
 
 		// Get role
-		role := r.Header.Get("X-Hasura-Role")
+		role := r.Header.Get("X-Role")
 		if role == "" {
 			role = "anonymous"
 		}
@@ -426,12 +426,12 @@ func (lb *LeakyBucket) MiddlewareWithQueue(next http.Handler) http.Handler {
 
 		// Get identifier
 		identifier := r.RemoteAddr
-		if userID := r.Header.Get("X-Hasura-User-Id"); userID != "" {
+		if userID := r.Header.Get("X-User-Id"); userID != "" {
 			identifier = userID
 		}
 
 		// Get role
-		role := r.Header.Get("X-Hasura-Role")
+		role := r.Header.Get("X-Role")
 		if role == "" {
 			role = "anonymous"
 		}

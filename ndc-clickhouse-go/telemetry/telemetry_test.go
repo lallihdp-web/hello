@@ -231,8 +231,8 @@ func TestHTTPMiddleware(t *testing.T) {
 
 	// Test request
 	req := httptest.NewRequest("GET", "/api/test", nil)
-	req.Header.Set("X-Hasura-User-Id", "user-123")
-	req.Header.Set("X-Hasura-Role", "admin")
+	req.Header.Set("X-User-Id", "user-123")
+	req.Header.Set("X-Role", "admin")
 	w := httptest.NewRecorder()
 
 	wrapped.ServeHTTP(w, req)

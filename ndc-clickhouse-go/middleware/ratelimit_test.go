@@ -273,7 +273,7 @@ func TestRateLimiter_MiddlewareWithRole(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		req := httptest.NewRequest("GET", "/test", nil)
 		req.RemoteAddr = "127.0.0.1:1234"
-		req.Header.Set("X-Hasura-Role", "admin")
+		req.Header.Set("X-Role", "admin")
 		w := httptest.NewRecorder()
 		handler.ServeHTTP(w, req)
 

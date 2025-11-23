@@ -100,7 +100,7 @@ Control what data can be inserted:
       "category_id": { "_in": [1, 2, 3] }
     },
     "set": {
-      "author_id": "X-Hasura-User-Id",
+      "author_id": "X-User-Id",
       "created_at": "now()"
     }
   }
@@ -124,7 +124,7 @@ Filters restrict which rows a user can access based on their session.
 ```json
 {
   "filter": {
-    "user_id": { "_eq": "X-Hasura-User-Id" }
+    "user_id": { "_eq": "X-User-Id" }
   }
 }
 ```
@@ -151,7 +151,7 @@ This ensures users can only access their own data.
   "filter": {
     "_or": [
       { "is_public": { "_eq": true } },
-      { "author_id": { "_eq": "X-Hasura-User-Id" } }
+      { "author_id": { "_eq": "X-User-Id" } }
     ]
   }
 }
@@ -189,17 +189,17 @@ Reference user session data in filters:
 
 | Variable | Description |
 |----------|-------------|
-| `X-Hasura-User-Id` | Current user's ID |
-| `X-Hasura-Role` | Current role |
-| `X-Hasura-Org-Id` | User's organization ID |
+| `X-User-Id` | Current user's ID |
+| `X-Role` | Current role |
+| `X-Org-Id` | User's organization ID |
 
 ### Using Session Variables
 
 ```json
 {
   "filter": {
-    "tenant_id": { "_eq": "X-Hasura-Tenant-Id" },
-    "created_by": { "_eq": "X-Hasura-User-Id" }
+    "tenant_id": { "_eq": "X-Tenant-Id" },
+    "created_by": { "_eq": "X-User-Id" }
   }
 }
 ```
@@ -226,26 +226,26 @@ Reference user session data in filters:
           "users": {
             "select": {
               "filter": {
-                "org_id": { "_eq": "X-Hasura-Org-Id" }
+                "org_id": { "_eq": "X-Org-Id" }
               }
             },
             "insert": {
               "set": {
-                "org_id": "X-Hasura-Org-Id"
+                "org_id": "X-Org-Id"
               }
             }
           },
           "data": {
             "select": {
               "filter": {
-                "org_id": { "_eq": "X-Hasura-Org-Id" }
+                "org_id": { "_eq": "X-Org-Id" }
               },
               "allow_aggregations": true
             },
             "insert": {
               "set": {
-                "org_id": "X-Hasura-Org-Id",
-                "created_by": "X-Hasura-User-Id"
+                "org_id": "X-Org-Id",
+                "created_by": "X-User-Id"
               }
             }
           }
@@ -257,8 +257,8 @@ Reference user session data in filters:
             "select": {
               "filter": {
                 "_and": [
-                  { "org_id": { "_eq": "X-Hasura-Org-Id" } },
-                  { "created_by": { "_eq": "X-Hasura-User-Id" } }
+                  { "org_id": { "_eq": "X-Org-Id" } },
+                  { "created_by": { "_eq": "X-User-Id" } }
                 ]
               }
             }
@@ -297,14 +297,14 @@ Reference user session data in filters:
               "filter": {
                 "_or": [
                   { "status": { "_eq": "published" } },
-                  { "author_id": { "_eq": "X-Hasura-User-Id" } }
+                  { "author_id": { "_eq": "X-User-Id" } }
                 ]
               }
             },
             "insert": {
               "columns": ["title", "content", "category_id"],
               "set": {
-                "author_id": "X-Hasura-User-Id",
+                "author_id": "X-User-Id",
                 "status": "draft"
               }
             }
@@ -365,13 +365,13 @@ Reference user session data in filters:
           "orders": {
             "select": {
               "filter": {
-                "customer_id": { "_eq": "X-Hasura-User-Id" }
+                "customer_id": { "_eq": "X-User-Id" }
               }
             },
             "insert": {
               "columns": ["product_id", "quantity", "shipping_address"],
               "set": {
-                "customer_id": "X-Hasura-User-Id",
+                "customer_id": "X-User-Id",
                 "status": "pending"
               }
             }
@@ -409,8 +409,8 @@ Test your permission configuration:
 
 # Test as specific role
 curl -X POST http://localhost:8080/query \
-  -H "X-Hasura-Role: customer" \
-  -H "X-Hasura-User-Id: 123" \
+  -H "X-Role: customer" \
+  -H "X-User-Id: 123" \
   -d '{ ... }'
 ```
 

@@ -54,7 +54,7 @@ type JWTConfig struct {
 	// Algorithm (HS256, HS384, HS512, RS256, RS384, RS512, ES256, ES384, ES512)
 	Algorithm string `json:"algorithm"`
 
-	// Claims namespace for Hasura claims
+	// Claims namespace for custom claims
 	ClaimsNamespace string `json:"claims_namespace"`
 
 	// Issuer to validate
@@ -158,13 +158,13 @@ func (a *Authenticator) Middleware(next http.Handler) http.Handler {
 	})
 }
 
-// extractFromHeaders extracts auth info from Hasura headers
+// extractFromHeaders extracts auth info from request headers
 func (a *Authenticator) extractFromHeaders(r *http.Request) *AuthInfo {
 	info := &AuthInfo{
-		UserID:       r.Header.Get("X-Hasura-User-Id"),
-		Role:         r.Header.Get("X-Hasura-Role"),
-		OrgID:        r.Header.Get("X-Hasura-Org-Id"),
-		TenantID:     r.Header.Get("X-Hasura-Tenant-Id"),
+		UserID:       r.Header.Get("X-User-Id"),
+		Role:         r.Header.Get("X-Role"),
+		OrgID:        r.Header.Get("X-Org-Id"),
+		TenantID:     r.Header.Get("X-Tenant-Id"),
 		CustomClaims: make(map[string]interface{}),
 	}
 
@@ -173,10 +173,15 @@ func (a *Authenticator) extractFromHeaders(r *http.Request) *AuthInfo {
 	}
 	info.Roles = []string{info.Role}
 
-	// Extract all X-Hasura-* headers as custom claims
+	// Extract all X-* custom headers as custom claims (excluding standard headers)
+	standardHeaders := map[string]bool{
+		"X-User-Id": true, "X-Role": true, "X-Org-Id": true, "X-Tenant-Id": true,
+		"X-Request-Id": true, "X-Forwarded-For": true, "X-Forwarded-Host": true,
+		"X-Forwarded-Proto": true, "X-Real-Ip": true, "X-API-Key": true,
+	}
 	for key, values := range r.Header {
-		if strings.HasPrefix(key, "X-Hasura-") && len(values) > 0 {
-			claimKey := strings.TrimPrefix(key, "X-Hasura-")
+		if strings.HasPrefix(key, "X-") && len(values) > 0 && !standardHeaders[key] {
+			claimKey := strings.TrimPrefix(key, "X-")
 			claimKey = strings.ToLower(strings.ReplaceAll(claimKey, "-", "_"))
 			info.CustomClaims[claimKey] = values[0]
 		}
@@ -271,38 +276,38 @@ func (a *Authenticator) authenticateJWT(r *http.Request) (*AuthInfo, bool) {
 		return nil, false
 	}
 
-	// Extract Hasura claims
+	// Extract custom claims from namespace
 	namespace := jwt.ClaimsNamespace
 	if namespace == "" {
-		namespace = "https://hasura.io/jwt/claims"
+		namespace = "https://clickhouse-graphql.io/jwt/claims"
 	}
 
-	hasuraClaims, ok := claims[namespace].(map[string]interface{})
+	customClaims, ok := claims[namespace].(map[string]interface{})
 	if !ok {
 		return nil, false
 	}
 
 	info := &AuthInfo{
-		CustomClaims: hasuraClaims,
+		CustomClaims: customClaims,
 	}
 
-	if userID, ok := hasuraClaims["x-hasura-user-id"].(string); ok {
+	if userID, ok := customClaims["x-user-id"].(string); ok {
 		info.UserID = userID
 	}
-	if role, ok := hasuraClaims["x-hasura-default-role"].(string); ok {
+	if role, ok := customClaims["x-default-role"].(string); ok {
 		info.Role = role
 	}
-	if roles, ok := hasuraClaims["x-hasura-allowed-roles"].([]interface{}); ok {
+	if roles, ok := customClaims["x-allowed-roles"].([]interface{}); ok {
 		for _, r := range roles {
 			if roleStr, ok := r.(string); ok {
 				info.Roles = append(info.Roles, roleStr)
 			}
 		}
 	}
-	if orgID, ok := hasuraClaims["x-hasura-org-id"].(string); ok {
+	if orgID, ok := customClaims["x-org-id"].(string); ok {
 		info.OrgID = orgID
 	}
-	if tenantID, ok := hasuraClaims["x-hasura-tenant-id"].(string); ok {
+	if tenantID, ok := customClaims["x-tenant-id"].(string); ok {
 		info.TenantID = tenantID
 	}
 
@@ -398,25 +403,25 @@ func (a *Authenticator) authenticateWebhook(r *http.Request) (*AuthInfo, bool) {
 		return nil, false
 	}
 
-	// Parse response headers for Hasura claims
+	// Parse response headers for auth claims
 	info := &AuthInfo{
 		CustomClaims: make(map[string]interface{}),
 	}
 
 	for key, values := range resp.Header {
-		if strings.HasPrefix(key, "X-Hasura-") && len(values) > 0 {
+		if strings.HasPrefix(key, "X-") && len(values) > 0 {
 			value := values[0]
 			switch key {
-			case "X-Hasura-User-Id":
+			case "X-User-Id":
 				info.UserID = value
-			case "X-Hasura-Role":
+			case "X-Role":
 				info.Role = value
-			case "X-Hasura-Org-Id":
+			case "X-Org-Id":
 				info.OrgID = value
-			case "X-Hasura-Tenant-Id":
+			case "X-Tenant-Id":
 				info.TenantID = value
 			}
-			claimKey := strings.TrimPrefix(key, "X-Hasura-")
+			claimKey := strings.TrimPrefix(key, "X-")
 			claimKey = strings.ToLower(strings.ReplaceAll(claimKey, "-", "_"))
 			info.CustomClaims[claimKey] = value
 		}
@@ -453,21 +458,21 @@ func (info *AuthInfo) GetSessionVariables() map[string]string {
 	}
 
 	if info.UserID != "" {
-		vars["x-hasura-user-id"] = info.UserID
+		vars["x-user-id"] = info.UserID
 	}
 	if info.Role != "" {
-		vars["x-hasura-role"] = info.Role
+		vars["x-role"] = info.Role
 	}
 	if info.OrgID != "" {
-		vars["x-hasura-org-id"] = info.OrgID
+		vars["x-org-id"] = info.OrgID
 	}
 	if info.TenantID != "" {
-		vars["x-hasura-tenant-id"] = info.TenantID
+		vars["x-tenant-id"] = info.TenantID
 	}
 
 	for k, v := range info.CustomClaims {
 		if strVal, ok := v.(string); ok {
-			vars["x-hasura-"+strings.ReplaceAll(k, "_", "-")] = strVal
+			vars["x-"+strings.ReplaceAll(k, "_", "-")] = strVal
 		}
 	}
 
@@ -495,7 +500,7 @@ func DefaultAuthConfig() *AuthConfig {
 		AnonymousRole:  "anonymous",
 		JWT: &JWTConfig{
 			Algorithm:       "HS256",
-			ClaimsNamespace: "https://hasura.io/jwt/claims",
+			ClaimsNamespace: "https://clickhouse-graphql.io/jwt/claims",
 			Header:          "Authorization",
 			HeaderPrefix:    "Bearer",
 		},

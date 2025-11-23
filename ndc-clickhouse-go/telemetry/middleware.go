@@ -37,8 +37,8 @@ func DefaultHTTPMiddlewareConfig() *HTTPMiddlewareConfig {
 	return &HTTPMiddlewareConfig{
 		ServiceName:  "ndc-clickhouse",
 		SkipPaths:    []string{"/health", "/healthz", "/ready", "/metrics"},
-		UserIDHeader: "X-Hasura-User-Id",
-		RoleHeader:   "X-Hasura-Role",
+		UserIDHeader: "X-User-Id",
+		RoleHeader:   "X-Role",
 	}
 }
 

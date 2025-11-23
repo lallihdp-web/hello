@@ -58,8 +58,8 @@ func TestAuthenticator_ExtractHeaders(t *testing.T) {
 	}))
 
 	req := httptest.NewRequest("GET", "/test", nil)
-	req.Header.Set("X-Hasura-User-Id", "123")
-	req.Header.Set("X-Hasura-Role", "admin")
+	req.Header.Set("X-User-Id", "123")
+	req.Header.Set("X-Role", "admin")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -170,17 +170,17 @@ func TestAuthInfo_GetSessionVariables(t *testing.T) {
 
 	vars := info.GetSessionVariables()
 
-	if vars["x-hasura-user-id"] != "123" {
-		t.Errorf("expected user-id 123, got %s", vars["x-hasura-user-id"])
+	if vars["x-user-id"] != "123" {
+		t.Errorf("expected user-id 123, got %s", vars["x-user-id"])
 	}
-	if vars["x-hasura-role"] != "admin" {
-		t.Errorf("expected role admin, got %s", vars["x-hasura-role"])
+	if vars["x-role"] != "admin" {
+		t.Errorf("expected role admin, got %s", vars["x-role"])
 	}
-	if vars["x-hasura-org-id"] != "org-1" {
-		t.Errorf("expected org-id org-1, got %s", vars["x-hasura-org-id"])
+	if vars["x-org-id"] != "org-1" {
+		t.Errorf("expected org-id org-1, got %s", vars["x-org-id"])
 	}
-	if vars["x-hasura-department"] != "engineering" {
-		t.Errorf("expected department engineering, got %s", vars["x-hasura-department"])
+	if vars["x-department"] != "engineering" {
+		t.Errorf("expected department engineering, got %s", vars["x-department"])
 	}
 }
 
@@ -309,9 +309,9 @@ func BenchmarkAuthenticator_Middleware_Headers(b *testing.B) {
 	}))
 
 	req := httptest.NewRequest("GET", "/test", nil)
-	req.Header.Set("X-Hasura-User-Id", "123")
-	req.Header.Set("X-Hasura-Role", "admin")
-	req.Header.Set("X-Hasura-Org-Id", "org-1")
+	req.Header.Set("X-User-Id", "123")
+	req.Header.Set("X-Role", "admin")
+	req.Header.Set("X-Org-Id", "org-1")
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
