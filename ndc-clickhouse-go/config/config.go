@@ -26,6 +26,90 @@ type Configuration struct {
 
 	// Metadata settings
 	Metadata MetadataConfig `json:"metadata,omitempty"`
+
+	// Telemetry settings (OpenTelemetry)
+	Telemetry TelemetryConfig `json:"telemetry,omitempty"`
+}
+
+// TelemetryConfig holds OpenTelemetry configuration
+type TelemetryConfig struct {
+	// Enable telemetry
+	Enabled bool `json:"enabled"`
+
+	// Service name
+	ServiceName string `json:"service_name,omitempty"`
+
+	// Service version
+	ServiceVersion string `json:"service_version,omitempty"`
+
+	// Environment (e.g., "production", "staging")
+	Environment string `json:"environment,omitempty"`
+
+	// Tracing configuration
+	Tracing TelemetryTracingConfig `json:"tracing,omitempty"`
+
+	// Metrics configuration
+	Metrics TelemetryMetricsConfig `json:"metrics,omitempty"`
+}
+
+// TelemetryTracingConfig holds tracing configuration
+type TelemetryTracingConfig struct {
+	// Enable tracing
+	Enabled bool `json:"enabled"`
+
+	// Exporter type: "otlp", "jaeger", "zipkin", "stdout", "none"
+	Exporter string `json:"exporter,omitempty"`
+
+	// OTLP endpoint (for OTLP exporter)
+	Endpoint string `json:"endpoint,omitempty"`
+
+	// Protocol: "grpc" or "http"
+	Protocol string `json:"protocol,omitempty"`
+
+	// Sampling ratio (0.0 to 1.0)
+	SamplingRatio float64 `json:"sampling_ratio,omitempty"`
+
+	// Sampling strategy: "always_on", "always_off", "trace_id_ratio", "parent_based"
+	SamplingStrategy string `json:"sampling_strategy,omitempty"`
+
+	// Trace database queries
+	TraceDB bool `json:"trace_db,omitempty"`
+
+	// Trace HTTP requests
+	TraceHTTP bool `json:"trace_http,omitempty"`
+
+	// Trace GraphQL operations
+	TraceGraphQL bool `json:"trace_graphql,omitempty"`
+}
+
+// TelemetryMetricsConfig holds metrics configuration
+type TelemetryMetricsConfig struct {
+	// Enable metrics
+	Enabled bool `json:"enabled"`
+
+	// Exporter type: "otlp", "prometheus", "stdout", "none"
+	Exporter string `json:"exporter,omitempty"`
+
+	// OTLP endpoint (for OTLP exporter)
+	Endpoint string `json:"endpoint,omitempty"`
+
+	// Prometheus port (for prometheus exporter)
+	PrometheusPort int `json:"prometheus_port,omitempty"`
+
+	// Prometheus path (for prometheus exporter)
+	PrometheusPath string `json:"prometheus_path,omitempty"`
+
+	// Metric prefix
+	MetricPrefix string `json:"metric_prefix,omitempty"`
+
+	// Collect database metrics
+	CollectDBMetrics bool `json:"collect_db_metrics,omitempty"`
+
+	// Collect HTTP metrics
+	CollectHTTPMetrics bool `json:"collect_http_metrics,omitempty"`
+
+	// Collect Go runtime metrics
+	CollectRuntimeMetrics bool `json:"collect_runtime_metrics,omitempty"`
 }
 
 // MetadataConfig holds metadata settings
