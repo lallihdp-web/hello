@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GraphQL Playground - NDC ClickHouse</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <nav class="sidebar">
+        <div class="logo">
+            <h2>🚀 NDC ClickHouse</h2>
+        </div>
+        <ul class="nav-links">
+            <li><a href="/">📊 Dashboard</a></li>
+            <li><a href="/playground" class="active">▶️ GraphQL Playground</a></li>
+            <li><a href="/schema">📋 Schema Explorer</a></li>
+            <li><a href="/config">⚙️ Configuration</a></li>
+            <li><a href="/permissions">🔒 Permissions</a></li>
+            <li><a href="/analytics">📈 Analytics</a></li>
+            <li><a href="/health">❤️ Health</a></li>
+        </ul>
+    </nav>
+
+    <main class="content playground-content">
+        <header>
+            <h1>GraphQL Playground</h1>
+            <div class="header-actions">
+                <button onclick="formatQuery()" class="btn btn-small">Format</button>
+                <button onclick="clearQuery()" class="btn btn-small">Clear</button>
+                <select id="exampleQueries" onchange="loadExample()">
+                    <option value="">Load Example...</option>
+                    <option value="basic">Basic Query</option>
+                    <option value="filter">With Filtering</option>
+                    <option value="aggregate">Aggregation</option>
+                    <option value="pagination">With Pagination</option>
+                </select>
+            </div>
+        </header>
+
+        <div class="playground-container">
+            <div class="query-panel">
+                <div class="panel-header">
+                    <span>Query</span>
+                    <button onclick="executeGraphQL()" class="btn btn-primary btn-execute">
+                        ▶ Execute
+                    </button>
+                </div>
+                <textarea id="queryEditor" class="code-editor" placeholder="# Enter your GraphQL query here
+query {
+  users(limit: 10) {
+    id
+    name
+    email
+  }
+}"></textarea>
+
+                <div class="variables-section">
+                    <div class="panel-header">
+                        <span>Variables</span>
+                    </div>
+                    <textarea id="variablesEditor" class="code-editor small" placeholder='{"userId": "123"}'>{}</textarea>
+                </div>
+
+                <div class="headers-section">
+                    <div class="panel-header">
+                        <span>Headers</span>
+                    </div>
+                    <textarea id="headersEditor" class="code-editor small" placeholder='{"X-Hasura-Role": "admin"}'>{}</textarea>
+                </div>
+            </div>
+
+            <div class="result-panel">
+                <div class="panel-header">
+                    <span>Response</span>
+                    <span id="responseTime" class="response-time"></span>
+                </div>
+                <pre id="responseViewer" class="response-viewer">// Response will appear here</pre>
+            </div>
+        </div>
+
+        <div class="schema-sidebar">
+            <h3>Schema</h3>
+            <div id="schemaTree" class="schema-tree">Loading...</div>
+        </div>
+    </main>
+
+    <script>
+        const examples = {
+            basic: `query {
+  users(limit: 10) {
+    id
+    name
+    email
+    created_at
+  }
+}`,
+            filter: `query {
+  users(where: {
+    is_active: { _eq: true },
+    age: { _gte: 18 }
+  }) {
+    id
+    name
+    email
+  }
+}`,
+            aggregate: `query {
+  orders_aggregate {
+    aggregate {
+      count
+      sum {
+        total_price
+      }
+      avg {
+        quantity
+      }
+    }
+  }
+}`,
+            pagination: `query {
+  products(
+    order_by: { created_at: desc }
+    limit: 10
+    offset: 0
+  ) {
+    id
+    name
+    price
+    category
+  }
+}`
+        };
+
+        function loadExample() {
+            const select = document.getElementById('exampleQueries');
+            const example = examples[select.value];
+            if (example) {
+                document.getElementById('queryEditor').value = example;
+            }
+            select.value = '';
+        }
+
+        function formatQuery() {
+            const editor = document.getElementById('queryEditor');
+            try {
+                // Basic formatting - add newlines and indentation
+                let query = editor.value;
+                query = query.replace(/\{/g, ' {\n  ');
+                query = query.replace(/\}/g, '\n}');
+                query = query.replace(/,/g, ',\n  ');
+                editor.value = query;
+            } catch (e) {
+                console.error('Format error:', e);
+            }
+        }
+
+        function clearQuery() {
+            document.getElementById('queryEditor').value = '';
+            document.getElementById('responseViewer').textContent = '// Response will appear here';
+        }
+
+        async function executeGraphQL() {
+            const query = document.getElementById('queryEditor').value;
+            const variables = document.getElementById('variablesEditor').value;
+            const headers = document.getElementById('headersEditor').value;
+            const viewer = document.getElementById('responseViewer');
+            const timeSpan = document.getElementById('responseTime');
+
+            viewer.textContent = 'Executing...';
+
+            const startTime = performance.now();
+
+            try {
+                let parsedHeaders = {};
+                try {
+                    parsedHeaders = JSON.parse(headers);
+                } catch (e) {}
+
+                let parsedVars = {};
+                try {
+                    parsedVars = JSON.parse(variables);
+                } catch (e) {}
+
+                // For NDC, we need to convert GraphQL to NDC query format
+                // This is a simplified version - in production you'd use a proper parser
+                const response = await fetch('/api/query', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...parsedHeaders
+                    },
+                    body: JSON.stringify({
+                        sql: convertGraphQLToSQL(query),
+                        variables: parsedVars
+                    })
+                });
+
+                const data = await response.json();
+                const endTime = performance.now();
+
+                timeSpan.textContent = `${Math.round(endTime - startTime)}ms`;
+                viewer.textContent = JSON.stringify(data, null, 2);
+
+                if (data.error) {
+                    viewer.classList.add('error');
+                } else {
+                    viewer.classList.remove('error');
+                }
+            } catch (error) {
+                viewer.textContent = JSON.stringify({ error: error.message }, null, 2);
+                viewer.classList.add('error');
+            }
+        }
+
+        // Simple GraphQL to SQL converter for demo
+        // In production, this would be handled server-side
+        function convertGraphQLToSQL(query) {
+            // Extract collection name from query
+            const match = query.match(/(\w+)\s*(?:\(|{)/);
+            if (!match) return 'SELECT 1';
+
+            const collection = match[1];
+            if (collection === 'query' || collection === 'mutation') {
+                const innerMatch = query.match(/{\s*(\w+)/);
+                if (innerMatch) {
+                    return `SELECT * FROM ${innerMatch[1]} LIMIT 10`;
+                }
+            }
+            return `SELECT * FROM ${collection} LIMIT 10`;
+        }
+
+        // Load schema on page load
+        fetch('/api/schema')
+            .then(r => r.json())
+            .then(data => {
+                const tree = document.getElementById('schemaTree');
+                let html = '';
+                data.tables.forEach(table => {
+                    html += `<div class="schema-item">
+                        <strong onclick="insertTable('${table.Name}')">${table.Name}</strong>
+                        <small>${table.Engine}</small>
+                    </div>`;
+                });
+                tree.innerHTML = html;
+            });
+
+        function insertTable(name) {
+            const editor = document.getElementById('queryEditor');
+            editor.value = `SELECT * FROM ${name} LIMIT 10`;
+        }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                executeGraphQL();
+            }
+        });
+    </script>
+</body>
+</html>

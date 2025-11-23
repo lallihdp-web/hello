@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analytics - NDC ClickHouse</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <nav class="sidebar">
+        <div class="logo"><h2>🚀 NDC ClickHouse</h2></div>
+        <ul class="nav-links">
+            <li><a href="/">📊 Dashboard</a></li>
+            <li><a href="/playground">▶️ GraphQL Playground</a></li>
+            <li><a href="/schema">📋 Schema Explorer</a></li>
+            <li><a href="/config">⚙️ Configuration</a></li>
+            <li><a href="/permissions">🔒 Permissions</a></li>
+            <li><a href="/analytics" class="active">📈 Analytics</a></li>
+            <li><a href="/health">❤️ Health</a></li>
+        </ul>
+    </nav>
+
+    <main class="content">
+        <header>
+            <h1>Query Analytics</h1>
+            <button onclick="refreshStats()" class="btn btn-secondary">🔄 Refresh</button>
+        </header>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-icon">🔍</div>
+                <div class="stat-info">
+                    <span class="stat-value" id="totalQueries">{{.TotalQueries}}</span>
+                    <span class="stat-label">Total Queries</span>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">❌</div>
+                <div class="stat-info">
+                    <span class="stat-value" id="totalErrors">{{.TotalErrors}}</span>
+                    <span class="stat-label">Total Errors</span>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">⏱️</div>
+                <div class="stat-info">
+                    <span class="stat-value" id="avgDuration">{{printf "%.2f" .AvgDuration}}ms</span>
+                    <span class="stat-label">Avg Duration</span>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">🐢</div>
+                <div class="stat-info">
+                    <span class="stat-value" id="slowCount">{{len .SlowQueries}}</span>
+                    <span class="stat-label">Slow Queries</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="analytics-sections">
+            <section class="analytics-section">
+                <h2>🐢 Slow Queries (>1s)</h2>
+                <table class="analytics-table">
+                    <thead>
+                        <tr>
+                            <th>Query</th>
+                            <th>Duration</th>
+                            <th>Time</th>
+                        </tr>
+                    </thead>
+                    <tbody id="slowQueriesTable">
+                        {{range .SlowQueries}}
+                        <tr>
+                            <td><code>{{.SQL}}</code></td>
+                            <td>{{printf "%.0f" .Duration}}ms</td>
+                            <td>{{.Timestamp.Format "15:04:05"}}</td>
+                        </tr>
+                        {{else}}
+                        <tr><td colspan="3">No slow queries recorded</td></tr>
+                        {{end}}
+                    </tbody>
+                </table>
+            </section>
+
+            <section class="analytics-section">
+                <h2>❌ Recent Errors</h2>
+                <table class="analytics-table">
+                    <thead>
+                        <tr>
+                            <th>Query</th>
+                            <th>Error</th>
+                            <th>Time</th>
+                        </tr>
+                    </thead>
+                    <tbody id="errorsTable">
+                        {{range .RecentErrors}}
+                        <tr>
+                            <td><code>{{.SQL}}</code></td>
+                            <td class="error-text">{{.Error}}</td>
+                            <td>{{.Timestamp.Format "15:04:05"}}</td>
+                        </tr>
+                        {{else}}
+                        <tr><td colspan="3">No errors recorded</td></tr>
+                        {{end}}
+                    </tbody>
+                </table>
+            </section>
+        </div>
+    </main>
+
+    <script>
+        function refreshStats() {
+            fetch('/api/stats')
+                .then(r => r.json())
+                .then(data => {
+                    document.getElementById('totalQueries').textContent = data.TotalQueries;
+                    document.getElementById('totalErrors').textContent = data.TotalErrors;
+                    document.getElementById('avgDuration').textContent = (data.AvgDuration || 0).toFixed(2) + 'ms';
+                    document.getElementById('slowCount').textContent = (data.SlowQueries || []).length;
+                });
+        }
+
+        // Auto-refresh every 10 seconds
+        setInterval(refreshStats, 10000);
+    </script>
+</body>
+</html>

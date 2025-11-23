@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Health - NDC ClickHouse</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <nav class="sidebar">
+        <div class="logo"><h2>🚀 NDC ClickHouse</h2></div>
+        <ul class="nav-links">
+            <li><a href="/">📊 Dashboard</a></li>
+            <li><a href="/playground">▶️ GraphQL Playground</a></li>
+            <li><a href="/schema">📋 Schema Explorer</a></li>
+            <li><a href="/config">⚙️ Configuration</a></li>
+            <li><a href="/permissions">🔒 Permissions</a></li>
+            <li><a href="/analytics">📈 Analytics</a></li>
+            <li><a href="/health" class="active">❤️ Health</a></li>
+        </ul>
+    </nav>
+
+    <main class="content">
+        <header>
+            <h1>System Health</h1>
+            <button onclick="checkHealth()" class="btn btn-secondary">🔄 Check Now</button>
+        </header>
+
+        <div class="health-status {{if .Healthy}}healthy{{else}}unhealthy{{end}}">
+            <div class="health-icon">{{if .Healthy}}✅{{else}}❌{{end}}</div>
+            <div class="health-text">
+                <h2>{{if .Healthy}}All Systems Operational{{else}}System Issues Detected{{end}}</h2>
+                {{if not .Healthy}}<p class="error">{{.Error}}</p>{{end}}
+            </div>
+        </div>
+
+        <div class="health-checks">
+            <h2>Component Status</h2>
+            <div class="checks-grid">
+                <div class="check-item" id="dbCheck">
+                    <span class="check-icon">⏳</span>
+                    <span class="check-name">ClickHouse Database</span>
+                    <span class="check-status">Checking...</span>
+                </div>
+                <div class="check-item" id="connectorCheck">
+                    <span class="check-icon">✅</span>
+                    <span class="check-name">NDC Connector</span>
+                    <span class="check-status">Running</span>
+                </div>
+                <div class="check-item" id="schemaCheck">
+                    <span class="check-icon">⏳</span>
+                    <span class="check-name">Schema Cache</span>
+                    <span class="check-status">Checking...</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="connection-info">
+            <h2>Connection Information</h2>
+            <table class="info-table">
+                <tr>
+                    <td>Database</td>
+                    <td><strong>{{.Database}}</strong></td>
+                </tr>
+                <tr>
+                    <td>Status</td>
+                    <td><span class="status-badge {{if .Healthy}}success{{else}}error{{end}}">{{if .Healthy}}Connected{{else}}Disconnected{{end}}</span></td>
+                </tr>
+            </table>
+        </div>
+
+        <div class="system-info">
+            <h2>System Information</h2>
+            <div id="systemInfo">Loading...</div>
+        </div>
+    </main>
+
+    <script>
+        function checkHealth() {
+            // Check database
+            const dbCheck = document.getElementById('dbCheck');
+            dbCheck.querySelector('.check-icon').textContent = '⏳';
+            dbCheck.querySelector('.check-status').textContent = 'Checking...';
+
+            fetch('/api/health')
+                .then(r => r.json())
+                .then(data => {
+                    const icon = data.status === 'healthy' ? '✅' : '❌';
+                    const status = data.status === 'healthy' ? 'Connected' : 'Error';
+                    dbCheck.querySelector('.check-icon').textContent = icon;
+                    dbCheck.querySelector('.check-status').textContent = status;
+                });
+
+            // Check schema
+            const schemaCheck = document.getElementById('schemaCheck');
+            fetch('/api/schema')
+                .then(r => r.json())
+                .then(data => {
+                    const count = data.tables?.length || 0;
+                    schemaCheck.querySelector('.check-icon').textContent = count > 0 ? '✅' : '⚠️';
+                    schemaCheck.querySelector('.check-status').textContent = `${count} tables`;
+                });
+        }
+
+        // Load system info
+        fetch('/api/query', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({sql: "SELECT version() as version, uptime() as uptime, currentDatabase() as db"})
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.rows && data.rows.length > 0) {
+                const info = data.rows[0];
+                document.getElementById('systemInfo').innerHTML = `
+                    <table class="info-table">
+                        <tr><td>ClickHouse Version</td><td>${info.version || 'N/A'}</td></tr>
+                        <tr><td>Uptime (seconds)</td><td>${info.uptime || 'N/A'}</td></tr>
+                        <tr><td>Current Database</td><td>${info.db || 'N/A'}</td></tr>
+                    </table>
+                `;
+            }
+        })
+        .catch(() => {
+            document.getElementById('systemInfo').innerHTML = '<p>Could not fetch system info</p>';
+        });
+
+        // Run initial health check
+        checkHealth();
+
+        // Auto-refresh every 30 seconds
+        setInterval(checkHealth, 30000);
+    </script>
+</body>
+</html>

@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Permissions - NDC ClickHouse</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <nav class="sidebar">
+        <div class="logo"><h2>🚀 NDC ClickHouse</h2></div>
+        <ul class="nav-links">
+            <li><a href="/">📊 Dashboard</a></li>
+            <li><a href="/playground">▶️ GraphQL Playground</a></li>
+            <li><a href="/schema">📋 Schema Explorer</a></li>
+            <li><a href="/config">⚙️ Configuration</a></li>
+            <li><a href="/permissions" class="active">🔒 Permissions</a></li>
+            <li><a href="/analytics">📈 Analytics</a></li>
+            <li><a href="/health">❤️ Health</a></li>
+        </ul>
+    </nav>
+
+    <main class="content">
+        <header>
+            <h1>Permissions Manager</h1>
+            <button onclick="addRole()" class="btn btn-primary">+ Add Role</button>
+        </header>
+
+        <div class="permissions-overview">
+            <div class="perm-info">
+                <span><strong>Admin Role:</strong> {{.Permissions.AdminRole}}</span>
+                <span><strong>Default Role:</strong> {{.Permissions.DefaultRole}}</span>
+            </div>
+        </div>
+
+        <div class="roles-container">
+            {{range $role, $perms := .Permissions.Roles}}
+            <div class="role-card">
+                <div class="role-header">
+                    <h3>{{$role}}</h3>
+                    <div class="role-actions">
+                        <button onclick="editRole('{{$role}}')" class="btn btn-small">Edit</button>
+                        <button onclick="deleteRole('{{$role}}')" class="btn btn-small btn-danger">Delete</button>
+                    </div>
+                </div>
+                {{if $perms.InheritFrom}}
+                <p class="inherit-info">Inherits from: <strong>{{$perms.InheritFrom}}</strong></p>
+                {{end}}
+                <div class="tables-perms">
+                    <h4>Table Permissions</h4>
+                    <table class="perms-table">
+                        <thead>
+                            <tr>
+                                <th>Table</th>
+                                <th>Select</th>
+                                <th>Insert</th>
+                                <th>Filter</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {{range $table, $perm := $perms.Tables}}
+                            <tr>
+                                <td>{{$table}}</td>
+                                <td>{{if $perm.Select}}✅{{else}}❌{{end}}</td>
+                                <td>{{if $perm.Insert}}✅{{else}}❌{{end}}</td>
+                                <td>{{if $perm.Select}}{{if $perm.Select.Filter}}Yes{{else}}No{{end}}{{else}}-{{end}}</td>
+                            </tr>
+                            {{end}}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {{end}}
+        </div>
+
+        <div class="permission-matrix">
+            <h2>Permission Matrix</h2>
+            <p>Visual overview of all permissions across roles and tables.</p>
+            <div id="matrix"></div>
+        </div>
+    </main>
+
+    <script>
+        function addRole() {
+            const name = prompt('Enter role name:');
+            if (!name) return;
+            alert('Role "' + name + '" would be added. Edit configuration to add roles.');
+            window.location.href = '/config';
+        }
+
+        function editRole(role) {
+            window.location.href = '/config?edit=' + role;
+        }
+
+        function deleteRole(role) {
+            if (confirm('Delete role "' + role + '"?')) {
+                alert('Role deletion requires editing configuration.');
+                window.location.href = '/config';
+            }
+        }
+
+        // Build permission matrix
+        fetch('/api/config')
+            .then(r => r.json())
+            .then(config => {
+                const matrix = document.getElementById('matrix');
+                const roles = Object.keys(config.permissions?.roles || {});
+                const tables = Object.keys(config.tables || {});
+
+                if (roles.length === 0 || tables.length === 0) {
+                    matrix.innerHTML = '<p>Configure roles and tables first.</p>';
+                    return;
+                }
+
+                let html = '<table class="matrix-table"><thead><tr><th>Table</th>';
+                roles.forEach(r => html += `<th>${r}</th>`);
+                html += '</tr></thead><tbody>';
+
+                tables.forEach(table => {
+                    html += `<tr><td>${table}</td>`;
+                    roles.forEach(role => {
+                        const rolePerms = config.permissions?.roles?.[role];
+                        const tablePerms = rolePerms?.tables?.[table];
+                        const hasSelect = tablePerms?.select ? '✅' : '❌';
+                        const hasInsert = tablePerms?.insert ? '✏️' : '';
+                        html += `<td>${hasSelect} ${hasInsert}</td>`;
+                    });
+                    html += '</tr>';
+                });
+
+                html += '</tbody></table>';
+                matrix.innerHTML = html;
+            });
+    </script>
+</body>
+</html>

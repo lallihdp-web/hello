@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.Title}}</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <nav class="sidebar">
+        <div class="logo">
+            <h2>🚀 NDC ClickHouse</h2>
+        </div>
+        <ul class="nav-links">
+            <li><a href="/" class="active">📊 Dashboard</a></li>
+            <li><a href="/playground">▶️ GraphQL Playground</a></li>
+            <li><a href="/schema">📋 Schema Explorer</a></li>
+            <li><a href="/config">⚙️ Configuration</a></li>
+            <li><a href="/permissions">🔒 Permissions</a></li>
+            <li><a href="/analytics">📈 Analytics</a></li>
+            <li><a href="/health">❤️ Health</a></li>
+        </ul>
+    </nav>
+
+    <main class="content">
+        <header>
+            <h1>Dashboard</h1>
+            <span class="database-badge">Database: {{.Database}}</span>
+        </header>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-icon">📋</div>
+                <div class="stat-info">
+                    <span class="stat-value" id="tableCount">{{.TableCount}}</span>
+                    <span class="stat-label">Tables</span>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">🔍</div>
+                <div class="stat-info">
+                    <span class="stat-value" id="queryCount">{{.QueryCount}}</span>
+                    <span class="stat-label">Queries Executed</span>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">❌</div>
+                <div class="stat-info">
+                    <span class="stat-value" id="errorCount">{{.ErrorCount}}</span>
+                    <span class="stat-label">Errors</span>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">✅</div>
+                <div class="stat-info">
+                    <span class="stat-value" id="healthStatus">Checking...</span>
+                    <span class="stat-label">Status</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="quick-actions">
+            <h2>Quick Actions</h2>
+            <div class="action-buttons">
+                <a href="/playground" class="btn btn-primary">Open GraphQL Playground</a>
+                <a href="/schema" class="btn btn-secondary">Explore Schema</a>
+                <button onclick="refreshSchema()" class="btn btn-secondary">Refresh Schema</button>
+            </div>
+        </div>
+
+        <div class="recent-activity">
+            <h2>Quick Query</h2>
+            <div class="query-box">
+                <textarea id="quickQuery" placeholder="SELECT * FROM your_table LIMIT 10"></textarea>
+                <button onclick="executeQuery()" class="btn btn-primary">Execute</button>
+            </div>
+            <div id="queryResult" class="query-result"></div>
+        </div>
+    </main>
+
+    <script>
+        // Check health status
+        fetch('/api/health')
+            .then(r => r.json())
+            .then(data => {
+                document.getElementById('healthStatus').textContent =
+                    data.status === 'healthy' ? 'Healthy' : 'Unhealthy';
+                document.getElementById('healthStatus').style.color =
+                    data.status === 'healthy' ? '#22c55e' : '#ef4444';
+            });
+
+        // Refresh stats periodically
+        setInterval(() => {
+            fetch('/api/stats')
+                .then(r => r.json())
+                .then(data => {
+                    document.getElementById('queryCount').textContent = data.TotalQueries;
+                    document.getElementById('errorCount').textContent = data.TotalErrors;
+                });
+        }, 5000);
+
+        function executeQuery() {
+            const sql = document.getElementById('quickQuery').value;
+            const resultDiv = document.getElementById('queryResult');
+            resultDiv.innerHTML = 'Executing...';
+
+            fetch('/api/query', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({sql: sql})
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.error) {
+                    resultDiv.innerHTML = `<div class="error">${data.error}</div>`;
+                    return;
+                }
+
+                let html = `<div class="result-info">${data.rowCount} rows in ${data.duration_ms}ms</div>`;
+                html += '<table class="result-table"><thead><tr>';
+                data.columns.forEach(col => html += `<th>${col}</th>`);
+                html += '</tr></thead><tbody>';
+                data.rows.forEach(row => {
+                    html += '<tr>';
+                    data.columns.forEach(col => html += `<td>${row[col] ?? 'null'}</td>`);
+                    html += '</tr>';
+                });
+                html += '</tbody></table>';
+                resultDiv.innerHTML = html;
+            })
+            .catch(err => {
+                resultDiv.innerHTML = `<div class="error">${err}</div>`;
+            });
+        }
+
+        function refreshSchema() {
+            fetch('/api/schema')
+                .then(r => r.json())
+                .then(data => {
+                    document.getElementById('tableCount').textContent = data.tables.length;
+                    alert('Schema refreshed! ' + data.tables.length + ' tables found.');
+                });
+        }
+    </script>
+</body>
+</html>

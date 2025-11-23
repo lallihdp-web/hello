@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configuration - NDC ClickHouse</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <nav class="sidebar">
+        <div class="logo"><h2>🚀 NDC ClickHouse</h2></div>
+        <ul class="nav-links">
+            <li><a href="/">📊 Dashboard</a></li>
+            <li><a href="/playground">▶️ GraphQL Playground</a></li>
+            <li><a href="/schema">📋 Schema Explorer</a></li>
+            <li><a href="/config" class="active">⚙️ Configuration</a></li>
+            <li><a href="/permissions">🔒 Permissions</a></li>
+            <li><a href="/analytics">📈 Analytics</a></li>
+            <li><a href="/health">❤️ Health</a></li>
+        </ul>
+    </nav>
+
+    <main class="content">
+        <header>
+            <h1>Configuration</h1>
+            <div class="header-actions">
+                <button onclick="saveConfig()" class="btn btn-primary">💾 Save Changes</button>
+                <button onclick="resetConfig()" class="btn btn-secondary">↩️ Reset</button>
+                <button onclick="downloadConfig()" class="btn btn-secondary">⬇️ Download</button>
+            </div>
+        </header>
+
+        <div class="config-editor">
+            <div class="editor-tabs">
+                <button class="tab active" onclick="showTab('json')">JSON Editor</button>
+                <button class="tab" onclick="showTab('visual')">Visual Editor</button>
+            </div>
+
+            <div id="jsonTab" class="tab-content active">
+                <textarea id="configEditor" class="config-textarea">{{.Config}}</textarea>
+            </div>
+
+            <div id="visualTab" class="tab-content" style="display:none;">
+                <div class="visual-config">
+                    <section class="config-section">
+                        <h3>Connection</h3>
+                        <div class="form-group">
+                            <label>URL</label>
+                            <input type="text" id="connUrl" placeholder="clickhouse://localhost:9000">
+                        </div>
+                        <div class="form-group">
+                            <label>Database</label>
+                            <input type="text" id="connDatabase" placeholder="default">
+                        </div>
+                        <div class="form-group">
+                            <label>Username</label>
+                            <input type="text" id="connUsername" placeholder="default">
+                        </div>
+                        <div class="form-group">
+                            <label>Password</label>
+                            <input type="password" id="connPassword">
+                        </div>
+                    </section>
+
+                    <section class="config-section">
+                        <h3>Tables</h3>
+                        <div id="tablesConfig"></div>
+                        <button onclick="addTableConfig()" class="btn btn-small">+ Add Table Config</button>
+                    </section>
+
+                    <section class="config-section">
+                        <h3>Native Queries</h3>
+                        <div id="nativeQueries"></div>
+                        <button onclick="addNativeQuery()" class="btn btn-small">+ Add Native Query</button>
+                    </section>
+                </div>
+            </div>
+        </div>
+
+        <div class="validation-result" id="validationResult"></div>
+    </main>
+
+    <script>
+        let originalConfig = {{.Config}};
+        let currentConfig = JSON.parse(originalConfig);
+
+        function showTab(tab) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(t => t.style.display = 'none');
+
+            if (tab === 'json') {
+                document.getElementById('jsonTab').style.display = 'block';
+                document.querySelector('.tab:first-child').classList.add('active');
+            } else {
+                document.getElementById('visualTab').style.display = 'block';
+                document.querySelector('.tab:last-child').classList.add('active');
+                loadVisualConfig();
+            }
+        }
+
+        function loadVisualConfig() {
+            try {
+                const config = JSON.parse(document.getElementById('configEditor').value);
+
+                document.getElementById('connUrl').value = config.connection?.url || '';
+                document.getElementById('connDatabase').value = config.connection?.database || '';
+                document.getElementById('connUsername').value = config.connection?.username || '';
+            } catch (e) {
+                console.error('Invalid JSON');
+            }
+        }
+
+        function saveConfig() {
+            const configText = document.getElementById('configEditor').value;
+
+            try {
+                JSON.parse(configText); // Validate JSON
+            } catch (e) {
+                showValidation('error', 'Invalid JSON: ' + e.message);
+                return;
+            }
+
+            fetch('/api/config', {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: configText
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.error) {
+                    showValidation('error', data.error);
+                } else {
+                    showValidation('success', 'Configuration saved successfully!');
+                }
+            });
+        }
+
+        function resetConfig() {
+            document.getElementById('configEditor').value = originalConfig;
+            showValidation('info', 'Configuration reset to original.');
+        }
+
+        function downloadConfig() {
+            const config = document.getElementById('configEditor').value;
+            const blob = new Blob([config], {type: 'application/json'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'configuration.json';
+            a.click();
+        }
+
+        function showValidation(type, message) {
+            const div = document.getElementById('validationResult');
+            div.className = 'validation-result ' + type;
+            div.textContent = message;
+            setTimeout(() => div.textContent = '', 5000);
+        }
+
+        function addTableConfig() {
+            const name = prompt('Enter table name:');
+            if (!name) return;
+
+            try {
+                const config = JSON.parse(document.getElementById('configEditor').value);
+                config.tables = config.tables || {};
+                config.tables[name] = { alias: name };
+                document.getElementById('configEditor').value = JSON.stringify(config, null, 2);
+            } catch (e) {
+                alert('Invalid JSON');
+            }
+        }
+
+        function addNativeQuery() {
+            const name = prompt('Enter query name:');
+            if (!name) return;
+
+            try {
+                const config = JSON.parse(document.getElementById('configEditor').value);
+                config.native_queries = config.native_queries || {};
+                config.native_queries[name] = {
+                    sql: "SELECT 1",
+                    columns: {},
+                    arguments: {}
+                };
+                document.getElementById('configEditor').value = JSON.stringify(config, null, 2);
+            } catch (e) {
+                alert('Invalid JSON');
+            }
+        }
+    </script>
+</body>
+</html>

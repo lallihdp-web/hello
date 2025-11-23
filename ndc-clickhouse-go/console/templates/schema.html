@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Schema Explorer - NDC ClickHouse</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <nav class="sidebar">
+        <div class="logo">
+            <h2>🚀 NDC ClickHouse</h2>
+        </div>
+        <ul class="nav-links">
+            <li><a href="/">📊 Dashboard</a></li>
+            <li><a href="/playground">▶️ GraphQL Playground</a></li>
+            <li><a href="/schema" class="active">📋 Schema Explorer</a></li>
+            <li><a href="/config">⚙️ Configuration</a></li>
+            <li><a href="/permissions">🔒 Permissions</a></li>
+            <li><a href="/analytics">📈 Analytics</a></li>
+            <li><a href="/health">❤️ Health</a></li>
+        </ul>
+    </nav>
+
+    <main class="content">
+        <header>
+            <h1>Schema Explorer</h1>
+            <div class="header-actions">
+                <input type="text" id="searchTables" placeholder="Search tables..." class="search-input">
+                <button onclick="refreshSchema()" class="btn btn-secondary">🔄 Refresh</button>
+            </div>
+        </header>
+
+        <div class="schema-explorer">
+            <div class="tables-list">
+                <h3>Tables ({{len .Tables}})</h3>
+                <ul id="tablesList">
+                    {{range .Tables}}
+                    <li class="table-item" onclick="showTable('{{.Name}}')">
+                        <span class="table-name">{{.Name}}</span>
+                        <span class="table-meta">{{.Engine}} · {{.TotalRows}} rows</span>
+                    </li>
+                    {{end}}
+                </ul>
+            </div>
+
+            <div class="table-details" id="tableDetails">
+                <div class="placeholder">
+                    <p>Select a table to view its details</p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const allColumns = {{.AllColumns | json}};
+        const tables = [{{range .Tables}}"{{.Name}}",{{end}}];
+
+        function showTable(tableName) {
+            const columns = allColumns[tableName] || [];
+            const detailsDiv = document.getElementById('tableDetails');
+
+            let html = `
+                <div class="table-header">
+                    <h2>${tableName}</h2>
+                    <div class="table-actions">
+                        <button onclick="copyCreateStatement('${tableName}')" class="btn btn-small">Copy DDL</button>
+                        <a href="/playground?table=${tableName}" class="btn btn-small btn-primary">Query</a>
+                    </div>
+                </div>
+                <table class="columns-table">
+                    <thead>
+                        <tr>
+                            <th>Column</th>
+                            <th>Type</th>
+                            <th>Primary Key</th>
+                            <th>Default</th>
+                            <th>Comment</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            columns.forEach(col => {
+                html += `
+                    <tr>
+                        <td><strong>${col.Name}</strong></td>
+                        <td><code>${col.Type}</code></td>
+                        <td>${col.IsPrimaryKey ? '✓' : ''}</td>
+                        <td>${col.DefaultExpression || '-'}</td>
+                        <td>${col.Comment || '-'}</td>
+                    </tr>
+                `;
+            });
+
+            html += `
+                    </tbody>
+                </table>
+                <div class="sample-data">
+                    <h3>Sample Data</h3>
+                    <div id="sampleData">Loading...</div>
+                </div>
+            `;
+
+            detailsDiv.innerHTML = html;
+
+            // Load sample data
+            fetch('/api/query', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({sql: `SELECT * FROM ${tableName} LIMIT 5`})
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.error) {
+                    document.getElementById('sampleData').innerHTML = `<p class="error">${data.error}</p>`;
+                    return;
+                }
+
+                let html = '<table class="result-table"><thead><tr>';
+                data.columns.forEach(col => html += `<th>${col}</th>`);
+                html += '</tr></thead><tbody>';
+                (data.rows || []).forEach(row => {
+                    html += '<tr>';
+                    data.columns.forEach(col => {
+                        const val = row[col];
+                        html += `<td>${val !== null && val !== undefined ? val : 'null'}</td>`;
+                    });
+                    html += '</tr>';
+                });
+                html += '</tbody></table>';
+                document.getElementById('sampleData').innerHTML = html;
+            });
+
+            // Highlight selected table
+            document.querySelectorAll('.table-item').forEach(item => {
+                item.classList.remove('selected');
+            });
+            event.target.closest('.table-item').classList.add('selected');
+        }
+
+        function copyCreateStatement(tableName) {
+            const columns = allColumns[tableName] || [];
+            let ddl = `CREATE TABLE ${tableName} (\n`;
+            columns.forEach((col, i) => {
+                ddl += `    ${col.Name} ${col.Type}`;
+                if (i < columns.length - 1) ddl += ',';
+                ddl += '\n';
+            });
+            ddl += ') ENGINE = MergeTree()\nORDER BY tuple();';
+
+            navigator.clipboard.writeText(ddl);
+            alert('DDL copied to clipboard!');
+        }
+
+        function refreshSchema() {
+            window.location.reload();
+        }
+
+        // Search functionality
+        document.getElementById('searchTables').addEventListener('input', function() {
+            const search = this.value.toLowerCase();
+            document.querySelectorAll('.table-item').forEach(item => {
+                const name = item.querySelector('.table-name').textContent.toLowerCase();
+                item.style.display = name.includes(search) ? 'flex' : 'none';
+            });
+        });
+    </script>
+</body>
+</html>
