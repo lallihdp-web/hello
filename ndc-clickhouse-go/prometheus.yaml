@@ -1,0 +1,32 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # Scrape NDC ClickHouse Connector metrics
+  - job_name: 'ndc-clickhouse'
+    static_configs:
+      - targets: ['ndc-clickhouse:8080']
+    metrics_path: /metrics
+
+  # Scrape OpenTelemetry Collector metrics
+  - job_name: 'otel-collector'
+    static_configs:
+      - targets: ['otel-collector:8888']
+
+  # Scrape ClickHouse metrics
+  - job_name: 'clickhouse'
+    static_configs:
+      - targets: ['clickhouse:8123']
+    metrics_path: /metrics
+
+  # Scrape Hasura Engine metrics (if enabled)
+  - job_name: 'hasura-engine'
+    static_configs:
+      - targets: ['hasura-engine:3000']
+    metrics_path: /metrics
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']

@@ -1,0 +1,14 @@
+{
+  "version": "v1",
+  "definition": {
+    "allowRoleEmulationBy": "admin",
+    "mode": {
+      "webhook": null,
+      "jwt": null,
+      "noAuth": {
+        "role": "admin",
+        "sessionVariables": {}
+      }
+    }
+  }
+}

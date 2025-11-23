@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  # ClickHouse database for testing
+  # ClickHouse database
   clickhouse:
     image: clickhouse/clickhouse-server:24.1
     container_name: clickhouse-dev
@@ -36,6 +36,9 @@ services:
       - CLICKHOUSE_PASSWORD=clickhouse
       - HASURA_CONNECTOR_PORT=8080
       - HASURA_LOG_LEVEL=debug
+      # Graceful shutdown configuration
+      - SHUTDOWN_GRACE_PERIOD=30s
+      - SHUTDOWN_DRAIN_TIMEOUT=15s
     volumes:
       - ./config:/etc/connector
     depends_on:
@@ -46,35 +49,126 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    # Enable graceful shutdown
+    stop_grace_period: 30s
 
-  # Hasura GraphQL Engine (optional, for full stack testing)
-  hasura:
-    image: hasura/graphql-engine:v2.36.0
-    container_name: hasura-dev
+  # Hasura DDN v3 Engine
+  hasura-engine:
+    image: hasura/v3-engine:latest
+    container_name: hasura-engine
     ports:
-      - "8081:8080"
+      - "3000:3000"
     environment:
-      - HASURA_GRAPHQL_METADATA_DATABASE_URL=postgres://postgres:postgres@postgres:5432/postgres
-      - HASURA_GRAPHQL_ENABLE_CONSOLE=true
-      - HASURA_GRAPHQL_DEV_MODE=true
+      - HASURA_GRAPHQL_CORS_DOMAIN=*
       - HASURA_GRAPHQL_ADMIN_SECRET=admin-secret
-    depends_on:
-      - ndc-clickhouse
-      - postgres
-    profiles:
-      - full
-
-  # Postgres for Hasura metadata (only needed for full stack)
-  postgres:
-    image: postgres:15-alpine
-    container_name: postgres-dev
-    environment:
-      - POSTGRES_PASSWORD=postgres
+      - OTLP_ENDPOINT=http://otel-collector:4317
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - ./engine-metadata:/metadata
+    depends_on:
+      ndc-clickhouse:
+        condition: service_healthy
+    command:
+      - "--metadata-path"
+      - "/metadata/metadata.json"
+      - "--authn-config-path"
+      - "/metadata/auth_config.json"
     profiles:
-      - full
+      - engine
+
+  # Web Console for ClickHouse Connector
+  console:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ndc-clickhouse-console
+    ports:
+      - "3001:3000"
+    environment:
+      - CONSOLE_PORT=3000
+      - CONNECTOR_URL=http://ndc-clickhouse:8080
+    command: ["console", "--port", "3000", "--connector-url", "http://ndc-clickhouse:8080"]
+    depends_on:
+      ndc-clickhouse:
+        condition: service_healthy
+    profiles:
+      - console
+
+  # OpenTelemetry Collector (for observability)
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.91.0
+    container_name: otel-collector
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+      - "8888:8888"   # Prometheus metrics
+    volumes:
+      - ./otel-config.yaml:/etc/otel/config.yaml
+    command: ["--config", "/etc/otel/config.yaml"]
+    profiles:
+      - observability
+
+  # Jaeger for distributed tracing
+  jaeger:
+    image: jaegertracing/all-in-one:1.52
+    container_name: jaeger
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "14268:14268"  # Collector HTTP
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    profiles:
+      - observability
+
+  # Prometheus for metrics
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yaml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    profiles:
+      - observability
+
+  # Grafana for dashboards
+  grafana:
+    image: grafana/grafana:10.2.2
+    container_name: grafana
+    ports:
+      - "3002:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    depends_on:
+      - prometheus
+    profiles:
+      - observability
 
 volumes:
   clickhouse-data:
-  postgres-data:
+  prometheus-data:
+  grafana-data:
+
+# Usage:
+#
+# Basic setup (ClickHouse + Connector only):
+#   docker compose up -d
+#
+# With Hasura DDN Engine:
+#   docker compose --profile engine up -d
+#
+# With Web Console:
+#   docker compose --profile console up -d
+#
+# With Observability Stack:
+#   docker compose --profile observability up -d
+#
+# Full stack:
+#   docker compose --profile engine --profile console --profile observability up -d
+#
+# Graceful shutdown:
+#   docker compose down (waits for graceful shutdown)
