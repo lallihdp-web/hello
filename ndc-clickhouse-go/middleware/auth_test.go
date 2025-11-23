@@ -337,3 +337,79 @@ func BenchmarkAuthInfo_GetSessionVariables(b *testing.B) {
 		info.GetSessionVariables()
 	}
 }
+
+func TestAuthenticator_DevMode(t *testing.T) {
+	auth := NewAuthenticator(&AuthConfig{
+		DevMode:     true,
+		DefaultRole: "admin",
+	})
+
+	handler := auth.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		info := GetAuthInfo(r.Context())
+		if info == nil {
+			t.Fatal("expected auth info")
+		}
+		// Should get default role since no X-Role header
+		if info.Role != "admin" {
+			t.Errorf("expected role admin, got %s", info.Role)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestAuthenticator_DevMode_WithHeaders(t *testing.T) {
+	auth := NewAuthenticator(&AuthConfig{
+		DevMode:     true,
+		DefaultRole: "admin",
+	})
+
+	handler := auth.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		info := GetAuthInfo(r.Context())
+		if info == nil {
+			t.Fatal("expected auth info")
+		}
+		// Should use the header-provided role
+		if info.Role != "user" {
+			t.Errorf("expected role user, got %s", info.Role)
+		}
+		if info.UserID != "test-user-123" {
+			t.Errorf("expected user-id test-user-123, got %s", info.UserID)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	req.Header.Set("X-Role", "user")
+	req.Header.Set("X-User-Id", "test-user-123")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestDevAuthConfig(t *testing.T) {
+	cfg := DevAuthConfig()
+
+	if !cfg.DevMode {
+		t.Error("expected DevMode to be true")
+	}
+	if cfg.DefaultRole != "admin" {
+		t.Errorf("expected default role admin, got %s", cfg.DefaultRole)
+	}
+	if cfg.JWT == nil {
+		t.Fatal("expected JWT config")
+	}
+	if !cfg.JWT.SkipVerification {
+		t.Error("expected JWT SkipVerification to be true")
+	}
+}

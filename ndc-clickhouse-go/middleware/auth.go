@@ -15,6 +15,10 @@ type AuthConfig struct {
 	// Enable authentication
 	Enabled bool `json:"enabled"`
 
+	// DevMode skips all authentication checks (for testing/development)
+	// When enabled, requests proceed with headers-based auth info or anonymous role
+	DevMode bool `json:"dev_mode"`
+
 	// API key authentication
 	APIKeys []APIKey `json:"api_keys"`
 
@@ -29,6 +33,9 @@ type AuthConfig struct {
 
 	// Anonymous role name
 	AnonymousRole string `json:"anonymous_role"`
+
+	// DefaultRole is assigned when no role is specified (useful in dev mode)
+	DefaultRole string `json:"default_role"`
 }
 
 // APIKey represents an API key
@@ -68,6 +75,10 @@ type JWTConfig struct {
 
 	// Header prefix (default: Bearer)
 	HeaderPrefix string `json:"header_prefix"`
+
+	// SkipVerification skips JWT signature verification (for testing only)
+	// WARNING: Never enable in production - tokens will not be validated
+	SkipVerification bool `json:"skip_verification"`
 }
 
 // WebhookConfig holds webhook authentication configuration
@@ -108,6 +119,19 @@ func NewAuthenticator(config *AuthConfig) *Authenticator {
 // Middleware returns an HTTP middleware for authentication
 func (a *Authenticator) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Dev mode: skip all authentication, use headers or default role
+		if a.config.DevMode {
+			info := a.extractFromHeaders(r)
+			// Apply default role if configured and no role specified
+			if info.Role == "anonymous" && a.config.DefaultRole != "" {
+				info.Role = a.config.DefaultRole
+				info.Roles = []string{a.config.DefaultRole}
+			}
+			ctx := WithAuthInfo(r.Context(), info)
+			next.ServeHTTP(w, r.WithContext(ctx))
+			return
+		}
+
 		if !a.config.Enabled {
 			// Authentication disabled, use headers directly
 			info := a.extractFromHeaders(r)
@@ -503,6 +527,25 @@ func DefaultAuthConfig() *AuthConfig {
 			ClaimsNamespace: "https://clickhouse-graphql.io/jwt/claims",
 			Header:          "Authorization",
 			HeaderPrefix:    "Bearer",
+		},
+	}
+}
+
+// DevAuthConfig returns authentication configuration for development/testing
+// WARNING: Never use in production - bypasses all authentication checks
+func DevAuthConfig() *AuthConfig {
+	return &AuthConfig{
+		DevMode:        true,
+		Enabled:        false,
+		AllowAnonymous: true,
+		AnonymousRole:  "anonymous",
+		DefaultRole:    "admin", // Default to admin role for testing
+		JWT: &JWTConfig{
+			Algorithm:        "HS256",
+			ClaimsNamespace:  "https://clickhouse-graphql.io/jwt/claims",
+			Header:           "Authorization",
+			HeaderPrefix:     "Bearer",
+			SkipVerification: true,
 		},
 	}
 }
