@@ -19,6 +19,10 @@ A Native Data Connector for [Hasura DDN](https://hasura.io/ddn) that provides **
 | **Row-Level Security** | Fine-grained permissions per role |
 | **Native Queries** | Custom SQL as GraphQL collections |
 | **Mutations** | INSERT support via batch operations |
+| **Rate Limiting** | Token bucket & leaky bucket algorithms |
+| **Caching** | LRU cache with TTL for query results |
+| **OpenTelemetry** | Distributed tracing and metrics |
+| **Web Console** | Built-in GraphQL playground |
 | **CLI Tools** | Introspect, validate, and manage configuration |
 
 ## Quick Start (2 minutes)
@@ -136,6 +140,20 @@ mutation {
         }
       }
     }
+  },
+  "telemetry": {
+    "enabled": true,
+    "service_name": "ndc-clickhouse",
+    "tracing": {
+      "enabled": true,
+      "exporter": "otlp",
+      "endpoint": "localhost:4317"
+    },
+    "metrics": {
+      "enabled": true,
+      "exporter": "prometheus",
+      "prometheus_port": 9090
+    }
   }
 }
 ```
@@ -175,9 +193,12 @@ ndc-clickhouse serve --configuration ./config
 | Document | Description |
 |----------|-------------|
 | [Getting Started](docs/GETTING_STARTED.md) | Quick start guide |
-| [Configuration](docs/CONFIGURATION.md) | Full configuration reference |
+| [Configuration](docs/CONFIGURATION.md) | Full configuration reference (includes telemetry) |
 | [Relationships](docs/RELATIONSHIPS.md) | Setting up table relationships |
 | [Permissions](docs/PERMISSIONS.md) | Row-level security setup |
+| [Architecture](docs/ARCHITECTURE.md) | Technical architecture overview |
+| [API Reference](docs/API_REFERENCE.md) | Package APIs and endpoints |
+| [Testing](docs/TESTING.md) | Test and benchmark guide |
 | [Development](docs/DEVELOPMENT.md) | Developer guide |
 | [Contributing](CONTRIBUTING.md) | How to contribute |
 
@@ -191,6 +212,12 @@ ndc-clickhouse-go/
 ├── schema/                 # Type mapping (ClickHouse → GraphQL)
 ├── config/                 # Configuration & permissions
 ├── internal/query/         # SQL query builder
+├── middleware/             # Auth, rate limiting (token/leaky bucket)
+├── telemetry/              # OpenTelemetry tracing & metrics
+├── cache/                  # LRU query cache
+├── analytics/              # Query logging & stats
+├── subscription/           # Subscription support
+├── console/                # Web UI & GraphQL playground
 ├── tests/                  # Integration tests
 ├── docs/                   # Documentation
 ├── Dockerfile

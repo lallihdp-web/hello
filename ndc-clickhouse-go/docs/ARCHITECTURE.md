@@ -23,8 +23,8 @@ This document provides a comprehensive technical overview of the NDC ClickHouse 
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                        NDC ClickHouse Connector                          │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐ │
-│  │ Auth         │  │ Rate Limit   │  │ Cache        │  │ Analytics    │ │
-│  │ Middleware   │  │ Middleware   │  │ Layer        │  │ Logger       │ │
+│  │ Auth         │  │ Rate Limit   │  │ Cache        │  │ Telemetry    │ │
+│  │ Middleware   │  │ Middleware   │  │ Layer        │  │ (OTel)       │ │
 │  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘ │
 │                                     │                                    │
 │  ┌──────────────────────────────────┴────────────────────────────────┐  │
@@ -232,11 +232,60 @@ type QueryLogger struct {
 - Webhook authentication
 - Header extraction for Hasura claims
 
-**Rate Limiting (`ratelimit.go`):**
+**Rate Limiting (`ratelimit.go`, `leakybucket.go`):**
 - Token bucket algorithm
+- Leaky bucket algorithm with queue support
 - Per-role limits
 - Per-IP limits
 - Per-endpoint limits
+
+### 10. Telemetry (`telemetry/`)
+
+OpenTelemetry-based observability with configurable exporters.
+
+```go
+type Telemetry struct {
+    config   *Config
+    tracer   *TracerProvider
+    metrics  *MetricsProvider
+    dbTracer *ClickHouseQueryTracer
+}
+
+// Initialize telemetry
+tel, _ := telemetry.New(ctx, cfg)
+defer tel.Shutdown(ctx)
+```
+
+**Tracing (`tracing.go`):**
+- Distributed tracing with context propagation
+- Multiple exporters: OTLP, Jaeger, Zipkin, stdout
+- Configurable sampling strategies
+- Span attribute helpers for DB, HTTP, GraphQL
+
+**Metrics (`metrics.go`):**
+- Counter, histogram, and gauge instruments
+- Prometheus and OTLP exporters
+- Runtime metrics (goroutines, heap, GC)
+- Query, cache, rate limit, and HTTP metrics
+
+**HTTP Middleware (`middleware.go`):**
+- Automatic request tracing
+- User context extraction from headers
+- Response status and duration tracking
+- Skip paths configuration
+
+**Database Tracing (`database.go`):**
+- Query-level span creation
+- SQL statement recording (with truncation)
+- Row count and error tracking
+- Batch operation tracing
+
+```go
+// Example: Tracing a query
+ctx, finish := telemetry.TraceSelectQuery(ctx, "users", sql)
+rows, err := client.Query(ctx, sql)
+finish(int64(len(rows)), err)
+```
 
 ## Data Flow
 
@@ -245,25 +294,31 @@ type QueryLogger struct {
 ```
 1. HTTP Request arrives at connector
    ↓
-2. Authentication middleware extracts user info
+2. Telemetry middleware starts trace span
    ↓
-3. Rate limiter checks request quota
+3. Authentication middleware extracts user info
    ↓
-4. Query handler receives NDC request
+4. Rate limiter checks request quota
    ↓
-5. Permission checker validates access
+5. Query handler receives NDC request
    ↓
-6. Cache lookup for identical query
+6. Permission checker validates access
+   ↓
+7. Cache lookup for identical query
    ↓ (miss)
-7. Query builder generates SQL
+8. Query builder generates SQL
    ↓
-8. ClickHouse client executes query
+9. DB tracer creates query span
    ↓
-9. Results cached for future requests
+10. ClickHouse client executes query
    ↓
-10. Analytics logger records query
+11. Results cached for future requests
    ↓
-11. Response returned to Hasura
+12. Metrics recorded (duration, rows, etc.)
+   ↓
+13. Trace span completed
+   ↓
+14. Response returned to Hasura
 ```
 
 ### Schema Introspection Flow
@@ -315,7 +370,15 @@ ndc-clickhouse-go/
 │   └── logger.go            # Query analytics
 ├── middleware/
 │   ├── auth.go              # Authentication
-│   └── ratelimit.go         # Rate limiting
+│   ├── ratelimit.go         # Rate limiting (token bucket)
+│   └── leakybucket.go       # Rate limiting (leaky bucket)
+├── telemetry/
+│   ├── config.go            # Telemetry configuration
+│   ├── telemetry.go         # Main initialization
+│   ├── tracing.go           # Distributed tracing
+│   ├── metrics.go           # Metrics collection
+│   ├── middleware.go        # HTTP tracing middleware
+│   └── database.go          # Database query tracing
 ├── subscription/
 │   └── manager.go           # Subscription support
 ├── console/

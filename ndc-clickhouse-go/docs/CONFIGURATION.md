@@ -234,6 +234,151 @@ See [PERMISSIONS.md](./PERMISSIONS.md) for detailed permissions setup.
 }
 ```
 
+## Telemetry Configuration (OpenTelemetry)
+
+Enable distributed tracing and metrics collection using OpenTelemetry:
+
+```json
+{
+  "telemetry": {
+    "enabled": true,
+    "service_name": "ndc-clickhouse",
+    "service_version": "1.0.0",
+    "environment": "production",
+    "tracing": {
+      "enabled": true,
+      "exporter": "otlp",
+      "endpoint": "localhost:4317",
+      "protocol": "grpc",
+      "sampling_strategy": "parent_based",
+      "sampling_ratio": 0.1,
+      "trace_db": true,
+      "trace_http": true,
+      "trace_graphql": true
+    },
+    "metrics": {
+      "enabled": true,
+      "exporter": "prometheus",
+      "prometheus_port": 9090,
+      "prometheus_path": "/metrics",
+      "metric_prefix": "ndc_clickhouse_",
+      "collect_db_metrics": true,
+      "collect_http_metrics": true,
+      "collect_runtime_metrics": true
+    }
+  }
+}
+```
+
+### Telemetry Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `enabled` | boolean | `false` | Enable telemetry collection |
+| `service_name` | string | `"ndc-clickhouse"` | Service name for traces/metrics |
+| `service_version` | string | `"1.0.0"` | Service version identifier |
+| `environment` | string | `"development"` | Environment (production, staging, etc.) |
+
+### Tracing Configuration
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `enabled` | boolean | `true` | Enable distributed tracing |
+| `exporter` | string | `"otlp"` | Exporter type: `otlp`, `jaeger`, `zipkin`, `stdout`, `none` |
+| `endpoint` | string | `"localhost:4317"` | Exporter endpoint URL |
+| `protocol` | string | `"grpc"` | OTLP protocol: `grpc` or `http` |
+| `sampling_strategy` | string | `"parent_based"` | Sampling: `always_on`, `always_off`, `trace_id_ratio`, `parent_based` |
+| `sampling_ratio` | float | `1.0` | Sampling ratio (0.0-1.0) for `trace_id_ratio` strategy |
+| `trace_db` | boolean | `true` | Trace database queries |
+| `trace_http` | boolean | `true` | Trace HTTP requests |
+| `trace_graphql` | boolean | `true` | Trace GraphQL operations |
+
+### Metrics Configuration
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `enabled` | boolean | `true` | Enable metrics collection |
+| `exporter` | string | `"prometheus"` | Exporter type: `otlp`, `prometheus`, `stdout`, `none` |
+| `endpoint` | string | - | OTLP endpoint (for OTLP exporter) |
+| `prometheus_port` | integer | `9090` | Port for Prometheus metrics endpoint |
+| `prometheus_path` | string | `"/metrics"` | Path for Prometheus metrics endpoint |
+| `metric_prefix` | string | `"ndc_clickhouse_"` | Prefix for all metric names |
+| `collect_db_metrics` | boolean | `true` | Collect database query metrics |
+| `collect_http_metrics` | boolean | `true` | Collect HTTP request metrics |
+| `collect_runtime_metrics` | boolean | `true` | Collect Go runtime metrics |
+
+### Exporter Examples
+
+**OTLP (OpenTelemetry Collector)**
+```json
+{
+  "telemetry": {
+    "enabled": true,
+    "tracing": {
+      "enabled": true,
+      "exporter": "otlp",
+      "endpoint": "otel-collector:4317",
+      "protocol": "grpc"
+    },
+    "metrics": {
+      "enabled": true,
+      "exporter": "otlp",
+      "endpoint": "otel-collector:4317"
+    }
+  }
+}
+```
+
+**Jaeger**
+```json
+{
+  "telemetry": {
+    "enabled": true,
+    "tracing": {
+      "enabled": true,
+      "exporter": "jaeger",
+      "endpoint": "http://jaeger:14268/api/traces"
+    }
+  }
+}
+```
+
+**Prometheus + Zipkin**
+```json
+{
+  "telemetry": {
+    "enabled": true,
+    "tracing": {
+      "enabled": true,
+      "exporter": "zipkin",
+      "endpoint": "http://zipkin:9411/api/v2/spans"
+    },
+    "metrics": {
+      "enabled": true,
+      "exporter": "prometheus",
+      "prometheus_port": 9090
+    }
+  }
+}
+```
+
+### Available Metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `ndc_clickhouse_queries_total` | Counter | Total queries executed |
+| `ndc_clickhouse_query_duration_seconds` | Histogram | Query execution duration |
+| `ndc_clickhouse_query_rows_total` | Counter | Total rows returned |
+| `ndc_clickhouse_query_errors_total` | Counter | Query errors |
+| `ndc_clickhouse_cache_hits_total` | Counter | Cache hits |
+| `ndc_clickhouse_cache_misses_total` | Counter | Cache misses |
+| `ndc_clickhouse_rate_limit_total` | Counter | Rate limited requests |
+| `ndc_clickhouse_http_requests_total` | Counter | HTTP requests |
+| `ndc_clickhouse_http_request_duration_seconds` | Histogram | HTTP request duration |
+| `ndc_clickhouse_active_connections` | Gauge | Active DB connections |
+| `ndc_clickhouse_runtime_goroutines` | Gauge | Number of goroutines |
+| `ndc_clickhouse_runtime_heap_alloc_bytes` | Gauge | Heap allocation |
+
 ## Complete Example
 
 ```json

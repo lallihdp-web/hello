@@ -509,6 +509,166 @@ for db, rows := range results {
 }
 ```
 
+### Telemetry Package
+
+```go
+import "github.com/your-org/ndc-clickhouse-go/telemetry"
+
+// Initialize telemetry from config
+cfg := telemetry.DefaultConfig()
+cfg.Enabled = true
+cfg.ServiceName = "my-connector"
+cfg.Tracing.Enabled = true
+cfg.Tracing.Exporter = "otlp"
+cfg.Tracing.Endpoint = "localhost:4317"
+cfg.Metrics.Enabled = true
+cfg.Metrics.Exporter = "prometheus"
+
+tel, err := telemetry.New(ctx, cfg)
+if err != nil {
+    log.Fatal(err)
+}
+defer tel.Shutdown(ctx)
+
+// Or initialize from file
+tel, err := telemetry.NewFromFile(ctx, "telemetry.json")
+
+// Use HTTP middleware
+handler := telemetry.HTTPMiddleware(nil)(yourHandler)
+
+// Custom middleware config
+middlewareCfg := &telemetry.HTTPMiddlewareConfig{
+    ServiceName:  "my-service",
+    SkipPaths:    []string{"/health", "/metrics"},
+    UserIDHeader: "X-Hasura-User-Id",
+    RoleHeader:   "X-Hasura-Role",
+}
+handler := telemetry.HTTPMiddleware(middlewareCfg)(yourHandler)
+
+// Manual span creation
+ctx, span := telemetry.StartSpanFromContext(ctx, "operation-name")
+defer span.End()
+
+// Add attributes to current span
+telemetry.SetAttributes(ctx,
+    attribute.String("user.id", userID),
+    attribute.String("collection", "users"),
+)
+
+// Record errors
+if err != nil {
+    telemetry.RecordError(ctx, err)
+}
+
+// Database query tracing
+dbTracer := telemetry.NewClickHouseQueryTracer("mydb", true)
+ctx, finish := dbTracer.TraceSelect(ctx, "users", "SELECT * FROM users")
+// ... execute query ...
+finish(rowCount, err)
+
+// Convenience function for query tracing
+ctx, finish := telemetry.TraceSelectQuery(ctx, "users", sql)
+rows, err := client.Query(ctx, sql)
+finish(int64(len(rows)), err)
+
+// Record metrics manually
+metrics := telemetry.GetMetrics()
+metrics.RecordQuery(ctx, "users", "SELECT", duration, rowCount, nil)
+metrics.RecordCacheHit(ctx, "query")
+metrics.RecordCacheMiss(ctx, "query")
+metrics.RecordRateLimit(ctx, "token_bucket", "anonymous")
+metrics.RecordHTTPRequest(ctx, "GET", "/api/query", 200, duration)
+
+// Prometheus endpoint
+http.Handle("/metrics", tel.Metrics().PrometheusHandler())
+
+// Get trace context for logging
+traceID := telemetry.WithTraceID(ctx)
+spanID := telemetry.WithSpanID(ctx)
+log.Printf("trace_id=%s span_id=%s query completed", traceID, spanID)
+
+// Traced HTTP client
+client := telemetry.NewTraceHTTPClient(nil, "my-client")
+resp, err := client.Get(ctx, "https://api.example.com/data")
+```
+
+#### Telemetry Configuration Types
+
+```go
+// Main configuration
+type Config struct {
+    Enabled            bool
+    ServiceName        string
+    ServiceVersion     string
+    Environment        string
+    ResourceAttributes map[string]string
+    Tracing           TracingConfig
+    Metrics           MetricsConfig
+}
+
+// Tracing configuration
+type TracingConfig struct {
+    Enabled         bool
+    Exporter        string  // "otlp", "jaeger", "zipkin", "stdout", "none"
+    Endpoint        string
+    Protocol        string  // "grpc" or "http"
+    SamplingStrategy string // "always_on", "always_off", "trace_id_ratio", "parent_based"
+    SamplingRatio   float64
+    TraceDB         bool
+    TraceHTTP       bool
+    TraceGraphQL    bool
+}
+
+// Metrics configuration
+type MetricsConfig struct {
+    Enabled              bool
+    Exporter             string // "otlp", "prometheus", "stdout", "none"
+    Endpoint             string
+    PrometheusPort       int
+    PrometheusPath       string
+    MetricPrefix         string
+    CollectDBMetrics     bool
+    CollectHTTPMetrics   bool
+    CollectRuntimeMetrics bool
+}
+```
+
+### Leaky Bucket Rate Limiter
+
+```go
+import "github.com/your-org/ndc-clickhouse-go/middleware"
+
+// Create leaky bucket limiter
+lb := middleware.NewLeakyBucket(&middleware.LeakyBucketConfig{
+    Enabled:      true,
+    BucketSize:   100,           // Max concurrent requests
+    LeakRate:     10,            // Requests processed per second
+    QueueSize:    50,            // Buffer for overflow
+    QueueTimeout: 30 * time.Second,
+    RoleConfigs: map[string]*middleware.LeakyBucketRoleConfig{
+        "admin": {BucketSize: 1000, LeakRate: 100, QueueSize: 500},
+        "user":  {BucketSize: 100, LeakRate: 10, QueueSize: 50},
+    },
+})
+
+// Non-blocking check
+allowed := lb.Allow("user-key")
+allowed := lb.AllowByRole("admin", "user-123")
+allowed := lb.AllowByEndpoint("/api/heavy", "user-123")
+
+// Blocking check with queue
+allowed, err := lb.AllowWithQueue(ctx, "user-key")
+
+// HTTP middleware
+handler := lb.Middleware(yourHandler)          // Reject when full
+handler := lb.MiddlewareWithQueue(yourHandler) // Queue when full
+
+// Get statistics
+stats := lb.GetStats("user-key")
+// stats.CurrentLevel, stats.BucketSize, stats.QueueLength
+// stats.TotalRequests, stats.DroppedRequests, stats.QueuedRequests
+```
+
 ## Error Codes
 
 | Code | Description |
