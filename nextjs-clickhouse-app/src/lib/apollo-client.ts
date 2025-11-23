@@ -1,8 +1,12 @@
 import { ApolloClient, InMemoryCache, HttpLink, from, ApolloLink } from '@apollo/client';
 import { onError } from '@apollo/client/link/error';
+import { getQueryLogger } from './logger';
 
 // GraphQL endpoint from environment variables
 const GRAPHQL_ENDPOINT = process.env.NEXT_PUBLIC_GRAPHQL_ENDPOINT || 'http://localhost:8080/graphql';
+
+// Initialize the query logger
+const queryLogger = getQueryLogger();
 
 // Error handling link
 const errorLink = onError(({ graphQLErrors, networkError }) => {
@@ -34,6 +38,33 @@ const authLink = new ApolloLink((operation, forward) => {
   return forward(operation);
 });
 
+// Query logging link - measures execution time and logs slow queries
+const loggingLink = new ApolloLink((operation, forward) => {
+  const stopTimer = queryLogger.startTimer();
+  const query = operation.query.loc?.source.body || '';
+
+  return forward(operation).map((response) => {
+    const durationMs = stopTimer();
+    const hasErrors = !!(response.errors && response.errors.length > 0);
+
+    queryLogger.log({
+      query,
+      variables: operation.variables,
+      durationMs,
+      success: !hasErrors,
+      error: hasErrors ? response.errors?.map(e => e.message).join(', ') : undefined,
+      responseData: response.data,
+      source: 'apollo',
+      metadata: {
+        operationName: operation.operationName,
+        extensions: response.extensions,
+      },
+    });
+
+    return response;
+  });
+});
+
 // HTTP link
 const httpLink = new HttpLink({
   uri: GRAPHQL_ENDPOINT,
@@ -41,7 +72,7 @@ const httpLink = new HttpLink({
 
 // Create Apollo Client instance
 export const apolloClient = new ApolloClient({
-  link: from([errorLink, authLink, httpLink]),
+  link: from([errorLink, authLink, loggingLink, httpLink]),
   cache: new InMemoryCache({
     typePolicies: {
       Query: {
@@ -70,9 +101,15 @@ export const apolloClient = new ApolloClient({
 export function createApolloClient() {
   return new ApolloClient({
     ssrMode: typeof window === 'undefined',
-    link: from([errorLink, authLink, httpLink]),
+    link: from([errorLink, authLink, loggingLink, httpLink]),
     cache: new InMemoryCache(),
   });
 }
+
+// Export query logger for external access
+export { queryLogger };
+
+// Export logger utilities
+export { getQueryLogger } from './logger';
 
 export default apolloClient;
