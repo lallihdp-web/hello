@@ -1,0 +1,73 @@
+# Example GraphQL queries for ClickHouse data
+# These queries correspond to the NDC ClickHouse connector schema
+
+# Get all tables/collections available
+query GetCollections {
+  __schema {
+    queryType {
+      fields {
+        name
+        description
+      }
+    }
+  }
+}
+
+# Example: Query users table
+query GetUsers($limit: Int, $offset: Int) {
+  users(limit: $limit, offset: $offset) {
+    id
+    name
+    email
+    created_at
+  }
+}
+
+# Example: Query users with filter
+query GetUsersByFilter($where: users_bool_exp) {
+  users(where: $where) {
+    id
+    name
+    email
+    created_at
+  }
+}
+
+# Example: Get user by ID
+query GetUserById($id: Int!) {
+  users(where: { id: { _eq: $id } }) {
+    id
+    name
+    email
+    created_at
+  }
+}
+
+# Example: Aggregate query
+query GetUsersAggregate {
+  users_aggregate {
+    aggregate {
+      count
+    }
+  }
+}
+
+# Example: Query events table (analytics)
+query GetEvents($limit: Int, $offset: Int) {
+  events(limit: $limit, offset: $offset, order_by: { timestamp: desc }) {
+    id
+    event_type
+    user_id
+    timestamp
+    properties
+  }
+}
+
+# Example: Events aggregate by type
+query GetEventsAggregate {
+  events_aggregate {
+    aggregate {
+      count
+    }
+  }
+}

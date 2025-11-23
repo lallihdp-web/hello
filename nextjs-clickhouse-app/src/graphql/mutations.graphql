@@ -1,0 +1,39 @@
+# Example GraphQL mutations for ClickHouse data
+# Note: ClickHouse is optimized for analytics, mutations are typically batch inserts
+
+# Insert single user
+mutation InsertUser($object: users_insert_input!) {
+  insert_users_one(object: $object) {
+    id
+    name
+    email
+    created_at
+  }
+}
+
+# Insert multiple users (batch)
+mutation InsertUsers($objects: [users_insert_input!]!) {
+  insert_users(objects: $objects) {
+    affected_rows
+    returning {
+      id
+      name
+    }
+  }
+}
+
+# Insert event
+mutation InsertEvent($object: events_insert_input!) {
+  insert_events_one(object: $object) {
+    id
+    event_type
+    timestamp
+  }
+}
+
+# Insert multiple events (batch - optimized for ClickHouse)
+mutation InsertEvents($objects: [events_insert_input!]!) {
+  insert_events(objects: $objects) {
+    affected_rows
+  }
+}
