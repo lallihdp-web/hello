@@ -3,8 +3,11 @@ package clickhouse
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net/url"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
@@ -12,11 +15,59 @@ import (
 	"github.com/your-org/ndc-clickhouse-go/config"
 )
 
-// Client wraps the ClickHouse connection
+// ErrClientClosed is returned when operations are attempted on a closed client
+var ErrClientClosed = errors.New("client is closed")
+
+// ErrShuttingDown is returned when client is shutting down
+var ErrShuttingDown = errors.New("client is shutting down")
+
+// ClientState represents the current state of the client
+type ClientState int32
+
+const (
+	StateActive ClientState = iota
+	StateShuttingDown
+	StateClosed
+)
+
+func (s ClientState) String() string {
+	switch s {
+	case StateActive:
+		return "active"
+	case StateShuttingDown:
+		return "shutting_down"
+	case StateClosed:
+		return "closed"
+	default:
+		return "unknown"
+	}
+}
+
+// ClientStats holds client statistics
+type ClientStats struct {
+	TotalQueries      int64
+	SuccessfulQueries int64
+	FailedQueries     int64
+	TotalExecs        int64
+	ActiveQueries     int64
+}
+
+// Client wraps the ClickHouse connection with graceful shutdown support
 type Client struct {
-	conn     driver.Conn
-	database string
-	config   *config.ConnectionConfig
+	conn       driver.Conn
+	database   string
+	config     *config.ConnectionConfig
+	state      atomic.Int32
+	inFlight   atomic.Int64
+	mu         sync.RWMutex
+	closedChan chan struct{}
+	closeOnce  sync.Once
+
+	// Statistics
+	totalQueries      atomic.Int64
+	successfulQueries atomic.Int64
+	failedQueries     atomic.Int64
+	totalExecs        atomic.Int64
 }
 
 // NewClient creates a new ClickHouse client
@@ -39,11 +90,15 @@ func NewClient(cfg *config.ConnectionConfig) (*Client, error) {
 		return nil, fmt.Errorf("failed to ping ClickHouse: %w", err)
 	}
 
-	return &Client{
-		conn:     conn,
-		database: cfg.Database,
-		config:   cfg,
-	}, nil
+	client := &Client{
+		conn:       conn,
+		database:   cfg.Database,
+		config:     cfg,
+		closedChan: make(chan struct{}),
+	}
+	client.state.Store(int32(StateActive))
+
+	return client, nil
 }
 
 // parseConnectionOptions converts config to clickhouse options
@@ -93,9 +148,105 @@ func parseConnectionOptions(cfg *config.ConnectionConfig) (*clickhouse.Options, 
 	return opts, nil
 }
 
-// Close closes the connection
+// Close closes the connection immediately
 func (c *Client) Close() error {
-	return c.conn.Close()
+	var err error
+	c.closeOnce.Do(func() {
+		c.state.Store(int32(StateClosed))
+		close(c.closedChan)
+		err = c.conn.Close()
+	})
+	return err
+}
+
+// GracefulClose initiates graceful shutdown with timeout for in-flight requests
+func (c *Client) GracefulClose(ctx context.Context) error {
+	// Mark as shutting down
+	if !c.state.CompareAndSwap(int32(StateActive), int32(StateShuttingDown)) {
+		// Already shutting down or closed
+		return nil
+	}
+
+	// Wait for in-flight requests to complete
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			// Timeout - force close
+			return c.Close()
+		case <-ticker.C:
+			if c.inFlight.Load() == 0 {
+				return c.Close()
+			}
+		}
+	}
+}
+
+// Shutdown is an alias for GracefulClose with a default timeout
+func (c *Client) Shutdown(timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return c.GracefulClose(ctx)
+}
+
+// State returns the current client state
+func (c *Client) State() ClientState {
+	return ClientState(c.state.Load())
+}
+
+// IsActive returns true if the client is active and accepting requests
+func (c *Client) IsActive() bool {
+	return c.State() == StateActive
+}
+
+// InFlightCount returns the number of in-flight requests
+func (c *Client) InFlightCount() int64 {
+	return c.inFlight.Load()
+}
+
+// Done returns a channel that is closed when the client is closed
+func (c *Client) Done() <-chan struct{} {
+	return c.closedChan
+}
+
+// GetStats returns client statistics
+func (c *Client) GetStats() ClientStats {
+	return ClientStats{
+		TotalQueries:      c.totalQueries.Load(),
+		SuccessfulQueries: c.successfulQueries.Load(),
+		FailedQueries:     c.failedQueries.Load(),
+		TotalExecs:        c.totalExecs.Load(),
+		ActiveQueries:     c.inFlight.Load(),
+	}
+}
+
+// checkState verifies the client is ready for operations
+func (c *Client) checkState() error {
+	state := c.State()
+	switch state {
+	case StateClosed:
+		return ErrClientClosed
+	case StateShuttingDown:
+		return ErrShuttingDown
+	default:
+		return nil
+	}
+}
+
+// trackRequest tracks an in-flight request and returns a release function
+func (c *Client) trackRequest() func(success bool) {
+	c.inFlight.Add(1)
+	c.totalQueries.Add(1)
+	return func(success bool) {
+		c.inFlight.Add(-1)
+		if success {
+			c.successfulQueries.Add(1)
+		} else {
+			c.failedQueries.Add(1)
+		}
+	}
 }
 
 // Database returns the current database name
@@ -105,22 +256,107 @@ func (c *Client) Database() string {
 
 // Query executes a query and returns rows
 func (c *Client) Query(ctx context.Context, query string, args ...interface{}) (driver.Rows, error) {
-	return c.conn.Query(ctx, query, args...)
+	if err := c.checkState(); err != nil {
+		return nil, err
+	}
+
+	release := c.trackRequest()
+	rows, err := c.conn.Query(ctx, query, args...)
+	if err != nil {
+		release(false)
+		return nil, err
+	}
+
+	// Wrap rows to track when they're closed
+	return &trackedRows{
+		Rows:    rows,
+		release: release,
+	}, nil
 }
 
 // QueryRow executes a query expecting a single row
 func (c *Client) QueryRow(ctx context.Context, query string, args ...interface{}) driver.Row {
+	// Note: QueryRow doesn't return error for connection issues,
+	// errors are deferred to Scan
+	c.inFlight.Add(1)
+	c.totalQueries.Add(1)
+	defer func() {
+		c.inFlight.Add(-1)
+		c.successfulQueries.Add(1)
+	}()
+
 	return c.conn.QueryRow(ctx, query, args...)
 }
 
 // Exec executes a query without returning rows
 func (c *Client) Exec(ctx context.Context, query string, args ...interface{}) error {
+	if err := c.checkState(); err != nil {
+		return err
+	}
+
+	c.inFlight.Add(1)
+	c.totalExecs.Add(1)
+	defer c.inFlight.Add(-1)
+
 	return c.conn.Exec(ctx, query, args...)
 }
 
 // PrepareBatch prepares a batch insert
 func (c *Client) PrepareBatch(ctx context.Context, query string) (driver.Batch, error) {
-	return c.conn.PrepareBatch(ctx, query)
+	if err := c.checkState(); err != nil {
+		return nil, err
+	}
+
+	c.inFlight.Add(1)
+	batch, err := c.conn.PrepareBatch(ctx, query)
+	if err != nil {
+		c.inFlight.Add(-1)
+		return nil, err
+	}
+
+	// Wrap batch to track when it's sent/aborted
+	return &trackedBatch{
+		Batch:   batch,
+		release: func() { c.inFlight.Add(-1) },
+	}, nil
+}
+
+// trackedRows wraps driver.Rows to track request completion
+type trackedRows struct {
+	driver.Rows
+	release  func(bool)
+	released bool
+}
+
+func (r *trackedRows) Close() error {
+	if !r.released {
+		r.released = true
+		r.release(true)
+	}
+	return r.Rows.Close()
+}
+
+// trackedBatch wraps driver.Batch to track request completion
+type trackedBatch struct {
+	driver.Batch
+	release  func()
+	released bool
+}
+
+func (b *trackedBatch) Send() error {
+	if !b.released {
+		b.released = true
+		defer b.release()
+	}
+	return b.Batch.Send()
+}
+
+func (b *trackedBatch) Abort() error {
+	if !b.released {
+		b.released = true
+		defer b.release()
+	}
+	return b.Batch.Abort()
 }
 
 // TableInfo holds metadata about a ClickHouse table

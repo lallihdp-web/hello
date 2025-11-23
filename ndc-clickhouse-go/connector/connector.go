@@ -3,27 +3,41 @@ package connector
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/hasura/ndc-sdk-go/connector"
 	"github.com/hasura/ndc-sdk-go/schema"
 	"github.com/your-org/ndc-clickhouse-go/clickhouse"
 	"github.com/your-org/ndc-clickhouse-go/config"
 	chschema "github.com/your-org/ndc-clickhouse-go/schema"
+	"github.com/your-org/ndc-clickhouse-go/shutdown"
 )
 
 // Connector implements the NDC Connector interface for ClickHouse
-type Connector struct{}
+type Connector struct {
+	shutdownManager *shutdown.Manager
+}
 
 // State holds the runtime state of the connector
 type State struct {
-	Client       *clickhouse.Client
-	Schema       *schema.SchemaResponse
-	TableColumns map[string][]clickhouse.ColumnInfo
+	Client          *clickhouse.Client
+	Schema          *schema.SchemaResponse
+	TableColumns    map[string][]clickhouse.ColumnInfo
+	ShutdownManager *shutdown.Manager
 }
 
 // NewConnector creates a new ClickHouse connector instance
 func NewConnector() *Connector {
-	return &Connector{}
+	return &Connector{
+		shutdownManager: shutdown.NewManager(shutdown.DefaultConfig()),
+	}
+}
+
+// NewConnectorWithShutdownConfig creates a new connector with custom shutdown config
+func NewConnectorWithShutdownConfig(cfg *shutdown.Config) *Connector {
+	return &Connector{
+		shutdownManager: shutdown.NewManager(cfg),
+	}
 }
 
 // ParseConfiguration parses and validates the connector configuration
@@ -49,6 +63,21 @@ func (c *Connector) TryInitState(ctx context.Context, cfg *config.Configuration,
 		return nil, fmt.Errorf("failed to create ClickHouse client: %w", err)
 	}
 
+	// Register client with shutdown manager for graceful shutdown
+	c.shutdownManager.RegisterCloseable("clickhouse-client", client)
+
+	// Register shutdown hook for logging stats
+	c.shutdownManager.RegisterHook(shutdown.Hook{
+		Name:     "log-client-stats",
+		Priority: 10, // Run after connections are drained
+		Fn: func(ctx context.Context) error {
+			stats := client.GetStats()
+			fmt.Printf("ClickHouse client stats at shutdown: queries=%d, successful=%d, failed=%d\n",
+				stats.TotalQueries, stats.SuccessfulQueries, stats.FailedQueries)
+			return nil
+		},
+	})
+
 	// Build schema from introspection
 	schemaResponse, tableColumns, err := c.buildSchema(ctx, client, cfg)
 	if err != nil {
@@ -57,10 +86,29 @@ func (c *Connector) TryInitState(ctx context.Context, cfg *config.Configuration,
 	}
 
 	return &State{
-		Client:       client,
-		Schema:       schemaResponse,
-		TableColumns: tableColumns,
+		Client:          client,
+		Schema:          schemaResponse,
+		TableColumns:    tableColumns,
+		ShutdownManager: c.shutdownManager,
 	}, nil
+}
+
+// Shutdown initiates graceful shutdown of the connector
+func (c *Connector) Shutdown(ctx context.Context) error {
+	c.shutdownManager.Shutdown(ctx)
+	return c.shutdownManager.WaitForShutdown()
+}
+
+// ShutdownWithTimeout initiates graceful shutdown with a specific timeout
+func (c *Connector) ShutdownWithTimeout(timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return c.Shutdown(ctx)
+}
+
+// GetShutdownManager returns the shutdown manager for external access
+func (c *Connector) GetShutdownManager() *shutdown.Manager {
+	return c.shutdownManager
 }
 
 // buildSchema introspects ClickHouse and builds the NDC schema

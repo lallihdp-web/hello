@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/your-org/ndc-clickhouse-go/config"
 )
@@ -130,7 +131,7 @@ func (mc *MultiClient) RemoveDatabase(name string) error {
 	return nil
 }
 
-// Close closes all database connections
+// Close closes all database connections immediately
 func (mc *MultiClient) Close() {
 	mc.mu.Lock()
 	defer mc.mu.Unlock()
@@ -139,6 +140,71 @@ func (mc *MultiClient) Close() {
 		client.Close()
 	}
 	mc.clients = make(map[string]*Client)
+}
+
+// GracefulClose initiates graceful shutdown for all database connections
+func (mc *MultiClient) GracefulClose(ctx context.Context) error {
+	mc.mu.Lock()
+	clients := make(map[string]*Client)
+	for name, client := range mc.clients {
+		clients[name] = client
+	}
+	mc.mu.Unlock()
+
+	var wg sync.WaitGroup
+	var lastErr error
+	var errMu sync.Mutex
+
+	for name, client := range clients {
+		wg.Add(1)
+		go func(name string, client *Client) {
+			defer wg.Done()
+			if err := client.GracefulClose(ctx); err != nil {
+				errMu.Lock()
+				lastErr = fmt.Errorf("failed to close %s: %w", name, err)
+				errMu.Unlock()
+			}
+		}(name, client)
+	}
+
+	wg.Wait()
+
+	mc.mu.Lock()
+	mc.clients = make(map[string]*Client)
+	mc.mu.Unlock()
+
+	return lastErr
+}
+
+// Shutdown gracefully shuts down all connections with timeout
+func (mc *MultiClient) Shutdown(timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return mc.GracefulClose(ctx)
+}
+
+// InFlightCount returns total in-flight requests across all clients
+func (mc *MultiClient) InFlightCount() int64 {
+	mc.mu.RLock()
+	defer mc.mu.RUnlock()
+
+	var total int64
+	for _, client := range mc.clients {
+		total += client.InFlightCount()
+	}
+	return total
+}
+
+// GetAllStats returns statistics for all clients
+func (mc *MultiClient) GetAllStats() map[string]ClientStats {
+	mc.mu.RLock()
+	defer mc.mu.RUnlock()
+
+	stats := make(map[string]ClientStats)
+	for name, client := range mc.clients {
+		stats[name] = client.GetStats()
+	}
+	return stats
 }
 
 // HealthCheck checks the health of all database connections
